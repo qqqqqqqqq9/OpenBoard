@@ -1,11 +1,2 @@
-name: Test Workflow 3
-
-on:
-  workflow_dispatch:
-
-jobs:
-  test:
-    runs-on: ubuntu-latest
-
-    steps:
-      - run: echo Hello
+- name: List Qt 6 builds
+  run: python -m aqt list-qt windows desktop --arch win64_msvc2022_64 | findstr 6.
