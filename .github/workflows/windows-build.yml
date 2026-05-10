@@ -9,27 +9,27 @@ jobs:
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        # Updated from v4 to v6
+        uses: actions/checkout@v6
         with:
           ref: dev
           submodules: recursive
 
       - name: Install Qt 6.8
+        # v4 is current; check for v5 if warnings persist
         uses: jurplel/install-qt-action@v4
         with:
           version: '6.8.3'
           host: 'windows'
           target: 'desktop'
           arch: 'win64_msvc2022_64'
-          # Note: qtsvg and qttools are usually included in the core desktop install for 6.8.
-          # We only explicitly request the large, separate WebEngine component.
           modules: 'qtwebengine'
 
       - name: Setup MSVC
+        # ilammy/msvc-dev-cmd usually tracks latest; ensure you are on @v1
         uses: ilammy/msvc-dev-cmd@v1
 
       - name: Configure CMake
-        # We use -G "Visual Studio 17 2022" to ensure the correct generator is used
         run: |
           cmake -B build -S . `
             -G "Visual Studio 17 2022" `
@@ -41,10 +41,9 @@ jobs:
         run: cmake --build build --config Release --parallel 4
 
       - name: Upload Artifact
-        uses: actions/upload-artifact@v4
+        # Updated from v4 to v7/v8
+        uses: actions/upload-artifact@v8
         with:
           name: OpenBoard-dev-win64
-          # MSVC places binaries in a /Release subfolder of the build directory
           path: build/Release/
           if-no-files-found: warn
-          
