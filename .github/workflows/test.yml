@@ -1,4 +1,4 @@
-name: Check Available Qt Versions (Windows)
+name: Check Available Qt Versions
 
 on:
   workflow_dispatch:
@@ -14,13 +14,16 @@ jobs:
           python-version: '3.12'
 
       - name: Install aqtinstall
-        run: pip install aqtinstall
+        run: python -m pip install --upgrade pip aqtinstall
 
-      - name: List ALL Qt versions (Windows Desktop)
+      - name: Verify aqtinstall
+        run: python -m aqt --version
+
+      - name: List Qt versions
         run: python -m aqt list-qt windows desktop
 
-      - name: Filter Qt 6.x only
-        run: python -m aqt list-qt windows desktop | findstr 6.
+      - name: Filter Qt 6.x
+        run: python -m aqt list-qt windows desktop | findstr 6
 
-      - name: Filter MSVC-related builds
+      - name: Filter MSVC builds
         run: python -m aqt list-qt windows desktop | findstr msvc
