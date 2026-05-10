@@ -8,7 +8,6 @@ env:
 
 jobs:
   build:
-    # Using the standard 2025 image
     runs-on: windows-2025
 
     steps:
@@ -25,13 +24,13 @@ jobs:
           host: 'windows'
           target: 'desktop'
           arch: 'win64_msvc2022_64'
-          modules: 'qtwebengine qtmultimedia'
+          # Added qtwebchannel and qtpositioning (required by WebEngineWidgets)
+          modules: 'qtwebengine qtmultimedia qtpositioning qtwebchannel'
 
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
 
       - name: Configure CMake
-        # Reverted generator to 17 2022 for maximum compatibility
         run: |
           cmake -B build -S . `
             -G "Visual Studio 17 2022" `
