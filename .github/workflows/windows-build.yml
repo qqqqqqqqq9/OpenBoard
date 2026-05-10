@@ -4,12 +4,11 @@ on:
   workflow_dispatch:
 
 env:
-  # This tells the runner to use Node 24 even for v4 actions
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   build:
-    runs-on: windows-2022
+    runs-on: windows-2025
 
     steps:
       - name: Checkout Repository
@@ -25,7 +24,8 @@ jobs:
           host: 'windows'
           target: 'desktop'
           arch: 'win64_msvc2022_64'
-          modules: 'qtwebengine'
+          # Added qtmultimedia here to fix the "Could NOT find" error
+          modules: 'qtwebengine qtmultimedia'
 
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
@@ -33,7 +33,7 @@ jobs:
       - name: Configure CMake
         run: |
           cmake -B build -S . `
-            -G "Visual Studio 17 2022" `
+            -G "Visual Studio 18 2026" `
             -A x64 `
             -DCMAKE_BUILD_TYPE=Release `
             -DCMAKE_PREFIX_PATH="${{ env.Qt6_DIR }}"
@@ -42,8 +42,7 @@ jobs:
         run: cmake --build build --config Release --parallel 4
 
       - name: Upload Artifact
-        # Reverted to v4 as v8 does not exist yet
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: OpenBoard-dev-win64
           path: build/Release/
