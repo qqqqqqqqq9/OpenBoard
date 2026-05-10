@@ -16,10 +16,10 @@ jobs:
       - name: Install aqtinstall
         run: python -m pip install --upgrade pip aqtinstall
 
-      - name: Verify aqtinstall
-        run: python -m aqt --version
+      - name: Check aqtinstall version
+        run: python -m aqt version
 
-      - name: List Qt versions
+      - name: List Qt versions (Windows desktop)
         run: python -m aqt list-qt windows desktop
 
       - name: Filter Qt 6.x
