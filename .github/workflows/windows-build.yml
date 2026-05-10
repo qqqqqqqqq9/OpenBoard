@@ -1,4 +1,4 @@
-name: Build OpenBoard Dev
+name: Build OpenBoard Dev (Qt 6.8)
 
 on:
   workflow_dispatch:
@@ -13,13 +13,14 @@ jobs:
           ref: dev
           submodules: recursive
 
-      - name: Install Qt 6
+      - name: Install Qt 6.8
         uses: jurplel/install-qt-action@v4
         with:
-          version: '6.6.3'
+          version: '6.8.3'
           host: 'windows'
           target: 'desktop'
           arch: 'win64_msvc2022_64'
+          modules: 'qtwebengine qtsvg qttools'
 
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
@@ -30,8 +31,8 @@ jobs:
       - name: Build
         run: cmake --build build --config Release
 
-      - name: Upload
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: OpenBoard-dev
+          name: OpenBoard-dev-win64
           path: build
