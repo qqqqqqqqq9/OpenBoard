@@ -5,6 +5,8 @@ on:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  # Tells CMake where to find libraries installed by vcpkg
+  VCPKG_ROOT: C:\tools\vcpkg
 
 jobs:
   build:
@@ -18,9 +20,10 @@ jobs:
           submodules: recursive
 
       - name: Install Build Dependencies
-        # pkg-config is necessary for finding various OpenBoard dependencies in the dev branch
         run: |
           choco install pkgconfiglite -y
+          # Install poppler and quazip via vcpkg (pre-installed on GitHub runners)
+          vcpkg install poppler[cpp]:x64-windows quazip:x64-windows
 
       - name: Install Qt 6.8
         uses: jurplel/install-qt-action@v4
@@ -29,21 +32,19 @@ jobs:
           host: 'windows'
           target: 'desktop'
           arch: 'win64_msvc2022_64'
-          # We only explicitly request these major modules. 
-          # SVG and Tools are part of the core desktop install in 6.8.
           modules: 'qtwebengine qtmultimedia qtpositioning qtwebchannel'
 
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
 
       - name: Configure CMake
-        # Re-applying the fix for the VS 2022 generator
         run: |
           cmake -B build -S . `
             -G "Visual Studio 17 2022" `
             -A x64 `
             -DCMAKE_BUILD_TYPE=Release `
-            -DCMAKE_PREFIX_PATH="${{ env.Qt6_DIR }}"
+            -DCMAKE_PREFIX_PATH="${{ env.Qt6_DIR }}" `
+            -DCMAKE_TOOLCHAIN_FILE="${{ env.VCPKG_ROOT }}\scripts\buildsystems\vcpkg.cmake"
 
       - name: Build
         run: cmake --build build --config Release --parallel 4
