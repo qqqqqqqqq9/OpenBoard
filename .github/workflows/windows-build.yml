@@ -18,7 +18,7 @@ jobs:
           submodules: recursive
 
       - name: Install Build Dependencies
-        # pkgconfig is required by CMake to find libraries like OpenSSL/Poppler
+        # pkg-config is necessary for finding various OpenBoard dependencies in the dev branch
         run: |
           choco install pkgconfiglite -y
 
@@ -29,13 +29,15 @@ jobs:
           host: 'windows'
           target: 'desktop'
           arch: 'win64_msvc2022_64'
-          # Comprehensive module list for OpenBoard Dev
-          modules: 'qtwebengine qtmultimedia qtsvg qtpositioning qtwebchannel'
+          # We only explicitly request these major modules. 
+          # SVG and Tools are part of the core desktop install in 6.8.
+          modules: 'qtwebengine qtmultimedia qtpositioning qtwebchannel'
 
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
 
       - name: Configure CMake
+        # Re-applying the fix for the VS 2022 generator
         run: |
           cmake -B build -S . `
             -G "Visual Studio 17 2022" `
