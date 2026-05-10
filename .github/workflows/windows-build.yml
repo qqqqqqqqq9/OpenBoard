@@ -8,7 +8,8 @@ jobs:
     runs-on: windows-2022
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Repository
+        uses: actions/checkout@v4
         with:
           ref: dev
           submodules: recursive
@@ -20,19 +21,26 @@ jobs:
           host: 'windows'
           target: 'desktop'
           arch: 'win64_msvc2022_64'
-          modules: 'qtwebengine qtsvg qttools'
+          # Added qtmultimedia and qtpositioning which are common OpenBoard dependencies
+          modules: 'qtwebengine qtsvg qttools qtmultimedia qtpositioning'
 
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
 
-      - name: Configure
-        run: cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
+      - name: Configure CMake
+        # Setting CMAKE_PREFIX_PATH ensures CMake finds the Qt installation from the action
+        run: |
+          cmake -B build -S . `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_PREFIX_PATH="${{ env.Qt6_DIR }}"
 
       - name: Build
-        run: cmake --build build --config Release
+        run: cmake --build build --config Release --parallel 4
 
-      - name: Upload artifact
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: OpenBoard-dev-win64
-          path: build
+          # Adjusting path to 'build/Release' as MSVC builds typically output to a subfolder
+          path: build/Release/
+          if-no-files-found: warn
