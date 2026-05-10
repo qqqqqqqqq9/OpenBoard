@@ -21,16 +21,19 @@ jobs:
           host: 'windows'
           target: 'desktop'
           arch: 'win64_msvc2022_64'
-          # Added qtmultimedia and qtpositioning which are common OpenBoard dependencies
-          modules: 'qtwebengine qtsvg qttools qtmultimedia qtpositioning'
+          # Note: qtsvg and qttools are usually included in the core desktop install for 6.8.
+          # We only explicitly request the large, separate WebEngine component.
+          modules: 'qtwebengine'
 
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
 
       - name: Configure CMake
-        # Setting CMAKE_PREFIX_PATH ensures CMake finds the Qt installation from the action
+        # We use -G "Visual Studio 17 2022" to ensure the correct generator is used
         run: |
           cmake -B build -S . `
+            -G "Visual Studio 17 2022" `
+            -A x64 `
             -DCMAKE_BUILD_TYPE=Release `
             -DCMAKE_PREFIX_PATH="${{ env.Qt6_DIR }}"
 
@@ -41,6 +44,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: OpenBoard-dev-win64
-          # Adjusting path to 'build/Release' as MSVC builds typically output to a subfolder
+          # MSVC places binaries in a /Release subfolder of the build directory
           path: build/Release/
           if-no-files-found: warn
+          
