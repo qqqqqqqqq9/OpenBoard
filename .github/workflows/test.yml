@@ -1,4 +1,4 @@
-name: Check Available Qt Versions
+name: Check Available Qt Versions (Windows)
 
 on:
   workflow_dispatch:
@@ -8,7 +8,7 @@ jobs:
     runs-on: windows-2022
 
     steps:
-      - name: Setup Python (already included, but explicit)
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -16,11 +16,11 @@ jobs:
       - name: Install aqtinstall
         run: pip install aqtinstall
 
-      - name: List ALL Qt Desktop versions (Windows)
+      - name: List ALL Qt versions (Windows Desktop)
         run: python -m aqt list-qt windows desktop
 
-      - name: List Qt 6 MSVC 2022 builds only
-        run: python -m aqt list-qt windows desktop --arch win64_msvc2022_64
+      - name: Filter Qt 6.x only
+        run: python -m aqt list-qt windows desktop | findstr 6.
 
-      - name: Filter Qt 6.x (quick view)
-        run: python -m aqt list-qt windows desktop --arch win64_msvc2022_64 | findstr 6.
+      - name: Filter MSVC-related builds
+        run: python -m aqt list-qt windows desktop | findstr msvc
