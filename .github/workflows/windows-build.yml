@@ -3,20 +3,22 @@ name: Build OpenBoard Dev (Qt 6.8)
 on:
   workflow_dispatch:
 
+env:
+  # This tells the runner to use Node 24 even for v4 actions
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build:
     runs-on: windows-2022
 
     steps:
       - name: Checkout Repository
-        # Updated from v4 to v6
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: dev
           submodules: recursive
 
       - name: Install Qt 6.8
-        # v4 is current; check for v5 if warnings persist
         uses: jurplel/install-qt-action@v4
         with:
           version: '6.8.3'
@@ -26,7 +28,6 @@ jobs:
           modules: 'qtwebengine'
 
       - name: Setup MSVC
-        # ilammy/msvc-dev-cmd usually tracks latest; ensure you are on @v1
         uses: ilammy/msvc-dev-cmd@v1
 
       - name: Configure CMake
@@ -41,8 +42,8 @@ jobs:
         run: cmake --build build --config Release --parallel 4
 
       - name: Upload Artifact
-        # Updated from v4 to v7/v8
-        uses: actions/upload-artifact@v8
+        # Reverted to v4 as v8 does not exist yet
+        uses: actions/upload-artifact@v4
         with:
           name: OpenBoard-dev-win64
           path: build/Release/
