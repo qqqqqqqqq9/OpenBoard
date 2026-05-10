@@ -17,6 +17,11 @@ jobs:
           ref: dev
           submodules: recursive
 
+      - name: Install Build Dependencies
+        # pkgconfig is required by CMake to find libraries like OpenSSL/Poppler
+        run: |
+          choco install pkgconfiglite -y
+
       - name: Install Qt 6.8
         uses: jurplel/install-qt-action@v4
         with:
@@ -24,8 +29,8 @@ jobs:
           host: 'windows'
           target: 'desktop'
           arch: 'win64_msvc2022_64'
-          # Added qtwebchannel and qtpositioning (required by WebEngineWidgets)
-          modules: 'qtwebengine qtmultimedia qtpositioning qtwebchannel'
+          # Comprehensive module list for OpenBoard Dev
+          modules: 'qtwebengine qtmultimedia qtsvg qtpositioning qtwebchannel'
 
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
