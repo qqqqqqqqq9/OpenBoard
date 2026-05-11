@@ -5,8 +5,6 @@ on:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  # Tells CMake where to find libraries installed by vcpkg
-  VCPKG_ROOT: C:\tools\vcpkg
 
 jobs:
   build:
@@ -22,8 +20,9 @@ jobs:
       - name: Install Build Dependencies
         run: |
           choco install pkgconfiglite -y
-          # Install poppler and quazip via vcpkg (pre-installed on GitHub runners)
-          vcpkg install poppler[cpp]:x64-windows quazip:x64-windows
+          # On Windows 2025, vcpkg is at C:\vcpkg.
+          # The 'cpp' feature is now part of the core poppler port or recognized automatically.
+          vcpkg install poppler:x64-windows quazip:x64-windows
 
       - name: Install Qt 6.8
         uses: jurplel/install-qt-action@v4
@@ -44,7 +43,7 @@ jobs:
             -A x64 `
             -DCMAKE_BUILD_TYPE=Release `
             -DCMAKE_PREFIX_PATH="${{ env.Qt6_DIR }}" `
-            -DCMAKE_TOOLCHAIN_FILE="${{ env.VCPKG_ROOT }}\scripts\buildsystems\vcpkg.cmake"
+            -DCMAKE_TOOLCHAIN_FILE="C:/vcpkg/scripts/buildsystems/vcpkg.cmake"
 
       - name: Build
         run: cmake --build build --config Release --parallel 4
