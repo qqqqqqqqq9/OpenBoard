@@ -18,18 +18,21 @@ jobs:
           submodules: recursive
 
       - name: Free Disk Space
-        # Windows runners are cluttered. This removes unused SDKs to give us ~20GB+ extra.
+        # Targets only non-system areas to avoid "Access Denied" errors
         run: |
-          Get-ChildItem -Path C:\ -Include *.PDB,*.GDB -Recurse -ErrorAction SilentlyContinue | Remove-Item -Force
-          rm -rf "C:/Program Files/Android"
-          rm -rf "C:/Program Files (x86)/Android"
-          rm -rf "C:/Windows/Temp/*"
+          Write-Host "Cleaning temporary and heavy SDK folders..."
+          $ErrorActionPreference = 'SilentlyContinue'
+          Remove-Item -Recurse -Force "C:\Program Files\Android"
+          Remove-Item -Recurse -Force "C:\Program Files (x86)\Android"
+          Remove-Item -Recurse -Force "$env:TEMP\*"
+          # Clean vcpkg cache if it exists from previous runs/pre-installs
+          if (Test-Path "C:\vcpkg\downloads") { Remove-Item -Recurse -Force "C:\vcpkg\downloads\*" }
+          Write-Host "Cleanup complete."
 
       - name: Install Build Dependencies
         run: |
           choco install pkgconfiglite -y
-          # Use --overlay-ports if needed, but 'poppler' usually pulls 'fontconfig' and 'freetype'
-          # We use --clean-after-build to delete temp object files immediately
+          # vcpkg is pre-installed on GitHub runners; we use it to install deps
           vcpkg install poppler:x64-windows quazip:x64-windows --clean-after-build
 
       - name: Install Qt 6.8
@@ -50,14 +53,14 @@ jobs:
             -G "Visual Studio 17 2022" `
             -A x64 `
             -DCMAKE_BUILD_TYPE=Release `
-            -DCMAKE_PREFIX_PATH="${{ env.Qt6_DIR }}" `
+            -DCMAKE_PREFIX_PATH="$env:Qt6_DIR" `
             -DCMAKE_TOOLCHAIN_FILE="C:/vcpkg/scripts/buildsystems/vcpkg.cmake"
 
       - name: Build
         run: cmake --build build --config Release --parallel 4
 
       - name: Upload Artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: OpenBoard-dev-win64
           path: build/Release/
