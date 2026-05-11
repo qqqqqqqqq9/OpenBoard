@@ -17,12 +17,20 @@ jobs:
           ref: dev
           submodules: recursive
 
+      - name: Free Disk Space
+        # Windows runners are cluttered. This removes unused SDKs to give us ~20GB+ extra.
+        run: |
+          Get-ChildItem -Path C:\ -Include *.PDB,*.GDB -Recurse -ErrorAction SilentlyContinue | Remove-Item -Force
+          rm -rf "C:/Program Files/Android"
+          rm -rf "C:/Program Files (x86)/Android"
+          rm -rf "C:/Windows/Temp/*"
+
       - name: Install Build Dependencies
         run: |
           choco install pkgconfiglite -y
-          # On Windows 2025, vcpkg is at C:\vcpkg.
-          # The 'cpp' feature is now part of the core poppler port or recognized automatically.
-          vcpkg install poppler:x64-windows quazip:x64-windows
+          # Use --overlay-ports if needed, but 'poppler' usually pulls 'fontconfig' and 'freetype'
+          # We use --clean-after-build to delete temp object files immediately
+          vcpkg install poppler:x64-windows quazip:x64-windows --clean-after-build
 
       - name: Install Qt 6.8
         uses: jurplel/install-qt-action@v4
