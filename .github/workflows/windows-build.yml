@@ -18,6 +18,17 @@ jobs:
           ref: dev
           submodules: recursive
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Install Ninja
+        run: choco install ninja -y
+
       - name: Maximize Build Space
         uses: easimon/maximize-build-space@master
         with:
@@ -28,6 +39,7 @@ jobs:
           remove-docker-images: 'true'
 
       - name: Final Temp Cleanup
+        shell: pwsh
         run: |
           $ErrorActionPreference = 'SilentlyContinue'
           Remove-Item -Recurse -Force "C:\Users\runneradmin\AppData\Local\Temp\*"
@@ -36,14 +48,22 @@ jobs:
       - name: Restore vcpkg
         uses: actions/cache@v4
         with:
-          path: C:\vcpkg\installed
+          path: |
+            C:\vcpkg\installed
+            C:\vcpkg\packages
           key: vcpkg-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}
-          restore-keys: vcpkg-${{ runner.os }}-
+          restore-keys: |
+            vcpkg-${{ runner.os }}-
 
       - name: Install Build Dependencies
+        shell: pwsh
         run: |
           choco install pkgconfiglite -y
-          vcpkg install poppler[core]:x64-windows quazip:x64-windows --clean-after-build
+
+          vcpkg install `
+            poppler[core]:x64-windows `
+            quazip:x64-windows `
+            --clean-after-build
 
       - name: Install Qt 6.8
         uses: jurplel/install-qt-action@v4
@@ -55,18 +75,17 @@ jobs:
           modules: 'qtwebengine qtmultimedia qtpositioning qtwebchannel'
           cache: true
 
-      - name: Setup MSVC
-        uses: ilammy/msvc-dev-cmd@v1
-
       - name: Configure CMake
+        shell: pwsh
         run: |
           cmake -B build -S . `
-            -G "Ninja" `
+            -G Ninja `
             -DCMAKE_BUILD_TYPE=Release `
-            -DCMAKE_PREFIX_PATH="$env:Qt6_DIR" `
+            -DCMAKE_CXX_STANDARD=17 `
+            -DCMAKE_PREFIX_PATH="$env:Qt6_ROOT" `
             -DCMAKE_TOOLCHAIN_FILE="C:/vcpkg/scripts/buildsystems/vcpkg.cmake" `
             -DVCPKG_TARGET_TRIPLET=x64-windows `
             -DQT_NO_PACKAGE_VERSION_CHECK=ON
 
       - name: Build
-        run: cmake --build build --config Release
+        run: cmake --build build --parallel
