@@ -8,7 +8,7 @@ env:
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
   POWERSHELL_TELEMETRY_OPTOUT: 1
 
-  # vcpkg
+  # vcpkg manifest mode
   VCPKG_FEATURE_FLAGS: binarycaching
   VCPKG_BINARY_SOURCES: clear;default,readwrite
   VCPKG_DEFAULT_BINARY_CACHE: C:\vcpkg-cache
@@ -58,11 +58,8 @@ jobs:
         shell: pwsh
         run: |
           git clone https://github.com/microsoft/vcpkg C:\vcpkg
-
           cd C:\vcpkg
-
           git checkout 2025.04.09
-
           .\bootstrap-vcpkg.bat
 
       - name: Fix VCPKG_ROOT
@@ -78,55 +75,34 @@ jobs:
           restore-keys: |
             vcpkg-bin-${{ runner.os }}-
 
-      - name: Restore vcpkg Installed Cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            C:\vcpkg\installed
-            C:\vcpkg\packages
-          key: vcpkg-installed-${{ runner.os }}-${{ hashFiles('**/vcpkg.json') }}
-          restore-keys: |
-            vcpkg-installed-${{ runner.os }}-
-
-      # IMPORTANT:
-      # Use Poppler core only to avoid Qt being compiled by vcpkg
-      - name: Install Build Dependencies
+      # IMPORTANT: manifest mode install (NO manual dependency listing)
+      - name: Install vcpkg dependencies (manifest mode)
         shell: pwsh
         run: |
-          C:\vcpkg\vcpkg.exe install `
-            poppler[core]:x64-windows `
-            --x-no-default-features `
-            quazip:x64-windows `
-            zlib:x64-windows `
-            freetype:x64-windows `
-            --clean-after-build `
-            --disable-metrics
+          cd $env:GITHUB_WORKSPACE
+          C:\vcpkg\vcpkg.exe install --triplet x64-windows --clean-after-build --disable-metrics
 
-      - name: Install Qt 6.8
+      - name: Install Qt 6.8 (prebuilt)
         uses: jurplel/install-qt-action@v4
         with:
           version: "6.8.3"
           host: "windows"
           target: "desktop"
           arch: "win64_msvc2022_64"
-
           modules: >
             qtwebengine
             qtmultimedia
             qtpositioning
             qtwebchannel
-
           cache: true
 
       - name: Verify Qt Installation
         shell: pwsh
         run: |
           Write-Host "Qt6_ROOT = $env:Qt6_ROOT"
-
           if (!(Test-Path $env:Qt6_ROOT)) {
             throw "Qt installation not found"
           }
-
           dir $env:Qt6_ROOT
 
       - name: Configure CMake
@@ -136,7 +112,6 @@ jobs:
             -G Ninja `
             -DCMAKE_BUILD_TYPE=Release `
             -DCMAKE_CXX_STANDARD=17 `
-            -DCMAKE_PREFIX_PATH="$env:Qt6_ROOT" `
             -DCMAKE_TOOLCHAIN_FILE="C:/vcpkg/scripts/buildsystems/vcpkg.cmake" `
             -DVCPKG_TARGET_TRIPLET=x64-windows `
             -DQT_NO_PACKAGE_VERSION_CHECK=ON `
@@ -150,11 +125,9 @@ jobs:
       - name: List Build Outputs
         shell: pwsh
         run: |
-          Get-ChildItem -Path build -Recurse `
-            -Include *.exe,*.dll `
-            | Select-Object FullName
+          Get-ChildItem -Path build -Recurse -Include *.exe,*.dll
 
-      - name: Upload Build Artifacts
+      - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: OpenBoard-Windows-Build
