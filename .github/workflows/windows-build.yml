@@ -8,11 +8,9 @@ env:
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
   POWERSHELL_TELEMETRY_OPTOUT: 1
 
-  # vcpkg manifest mode
   VCPKG_FEATURE_FLAGS: binarycaching
   VCPKG_BINARY_SOURCES: clear;default,readwrite
   VCPKG_DEFAULT_BINARY_CACHE: C:\vcpkg-cache
-  VCPKG_FORCE_SYSTEM_BINARIES: 1
 
 jobs:
   build:
@@ -41,18 +39,9 @@ jobs:
       - name: Free Disk Space
         shell: pwsh
         run: |
-          Write-Host "Disk space before cleanup:"
-          Get-PSDrive
-
           Remove-Item "C:\Program Files\dotnet" -Recurse -Force -ErrorAction SilentlyContinue
           Remove-Item "C:\hostedtoolcache\windows\CodeQL" -Recurse -Force -ErrorAction SilentlyContinue
           Remove-Item "C:\Program Files\Android" -Recurse -Force -ErrorAction SilentlyContinue
-
-          Remove-Item "$env:TEMP\*" -Recurse -Force -ErrorAction SilentlyContinue
-          Remove-Item "C:\Windows\Temp\*" -Recurse -Force -ErrorAction SilentlyContinue
-
-          Write-Host "Disk space after cleanup:"
-          Get-PSDrive
 
       - name: Bootstrap vcpkg
         shell: pwsh
@@ -67,20 +56,15 @@ jobs:
         run: |
           echo "VCPKG_ROOT=C:\vcpkg" >> $env:GITHUB_ENV
 
-      - name: Restore vcpkg Binary Cache
+      - name: Restore vcpkg cache
         uses: actions/cache@v4
         with:
           path: C:\vcpkg-cache
-          key: vcpkg-bin-${{ runner.os }}-${{ hashFiles('**/vcpkg.json') }}
+          key: vcpkg-${{ runner.os }}-${{ hashFiles('**/vcpkg.json') }}
           restore-keys: |
-            vcpkg-bin-${{ runner.os }}-
+            vcpkg-${{ runner.os }}-
 
-      # IMPORTANT: manifest mode install (NO manual dependency listing)
-      - name: Install vcpkg dependencies (manifest mode)
-        shell: pwsh
-        run: |
-          cd $env:GITHUB_WORKSPACE
-          C:\vcpkg\vcpkg.exe install --triplet x64-windows --clean-after-build --disable-metrics
+      # ❗ NO vcpkg install here anymore
 
       - name: Install Qt 6.8 (prebuilt)
         uses: jurplel/install-qt-action@v4
@@ -89,21 +73,8 @@ jobs:
           host: "windows"
           target: "desktop"
           arch: "win64_msvc2022_64"
-          modules: >
-            qtwebengine
-            qtmultimedia
-            qtpositioning
-            qtwebchannel
+          modules: qtwebengine qtmultimedia qtpositioning qtwebchannel
           cache: true
-
-      - name: Verify Qt Installation
-        shell: pwsh
-        run: |
-          Write-Host "Qt6_ROOT = $env:Qt6_ROOT"
-          if (!(Test-Path $env:Qt6_ROOT)) {
-            throw "Qt installation not found"
-          }
-          dir $env:Qt6_ROOT
 
       - name: Configure CMake
         shell: pwsh
@@ -111,26 +82,19 @@ jobs:
           cmake -B build -S . `
             -G Ninja `
             -DCMAKE_BUILD_TYPE=Release `
-            -DCMAKE_CXX_STANDARD=17 `
             -DCMAKE_TOOLCHAIN_FILE="C:/vcpkg/scripts/buildsystems/vcpkg.cmake" `
             -DVCPKG_TARGET_TRIPLET=x64-windows `
-            -DQT_NO_PACKAGE_VERSION_CHECK=ON `
+            -DCMAKE_PREFIX_PATH="$env:Qt6_ROOT" `
             -DBUILD_TESTING=OFF
 
       - name: Build
         shell: pwsh
-        run: |
-          cmake --build build --config Release --parallel
+        run: cmake --build build --parallel
 
-      - name: List Build Outputs
-        shell: pwsh
-        run: |
-          Get-ChildItem -Path build -Recurse -Include *.exe,*.dll
-
-      - name: Upload Artifacts
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: OpenBoard-Windows-Build
+          name: OpenBoard-Windows
           path: |
             build/**/*.exe
             build/**/*.dll
