@@ -1,7 +1,7 @@
 name: Build OpenBoard Dev (Qt 6.8)
 
 on:
-	workflow_dispatch:
+  workflow_dispatch:
 
 env:
 	FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -27,7 +27,6 @@ jobs:
 					remove-codeql: 'true'
 					remove-docker-images: 'true'
 
-			# Ensures the build doesn't fail due to leftover temp files from previous steps
 			- name: Final Temp Cleanup
 				run: |
 					$ErrorActionPreference = 'SilentlyContinue'
@@ -44,7 +43,6 @@ jobs:
 			- name: Install Build Dependencies
 				run: |
 					choco install pkgconfiglite -y
-					# Adding --clean-after-build is vital to prevent buildtree bloat
 					vcpkg install poppler[core]:x64-windows quazip:x64-windows --clean-after-build
 
 			- name: Install Qt 6.8
