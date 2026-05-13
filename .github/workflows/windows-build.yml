@@ -1,74 +1,68 @@
 name: Build OpenBoard Dev (Qt 6.8)
 
 on:
-	workflow_dispatch:
+  workflow_dispatch:
 
 env:
-	FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-	VCPKG_BINARY_SOURCES: "clear;nuget,GitHub,readwrite"
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  VCPKG_BINARY_SOURCES: "clear;nuget,GitHub,readwrite"
 
 jobs:
-	build:
-		runs-on: windows-2025
+  build:
+    runs-on: windows-2025
 
-		steps:
-			- name: Checkout Repository
-				uses: actions/checkout@v4
-				with:
-					ref: dev
-					submodules: recursive
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          ref: dev
+          submodules: recursive
 
-			- name: Maximize Build Space
-				uses: easimon/maximize-build-space@master
-				with:
-					remove-dotnet: 'true'
-					remove-android: 'true'
-					remove-haskell: 'true'
-					remove-codeql: 'true'
-					remove-docker-images: 'true'
+      - name: Free Disk Space
+        run: |
+          # Remove heavy pre-installed software to clear ~20GB+
+          Write-Host "Clearing large SDKs..."
+          $ErrorActionPreference = 'SilentlyContinue'
+          Remove-Item -Recurse -Force "C:\Program Files\Android"
+          Remove-Item -Recurse -Force "C:\Program Files (x86)\Android"
+          Remove-Item -Recurse -Force "C:\Microsoft\AndroidSDK"
+          Remove-Item -Recurse -Force "C:\Program Files\dotnet"
+          Write-Host "Cleanup complete."
 
-			# Ensures the build doesn't fail due to leftover temp files from previous steps
-			- name: Final Temp Cleanup
-				run: |
-					$ErrorActionPreference = 'SilentlyContinue'
-					Remove-Item -Recurse -Force "C:\Users\runneradmin\AppData\Local\Temp\*"
-					Write-Host "Temp cleared."
+      # This caches the vcpkg artifacts so you don't rebuild dependencies every time
+      - name: Restore vcpkg
+        uses: actions/cache@v4
+        with:
+          path: $VCPKG_INSTALLATION_ROOT/installed
+          key: vcpkg-${{ runner.os }}-${{ hashFiles('vcpkg.json') }} # If you have a vcpkg.json
+          restore-keys: vcpkg-${{ runner.os }}-
 
-			- name: Restore vcpkg
-				uses: actions/cache@v4
-				with:
-					path: $VCPKG_INSTALLATION_ROOT/installed
-					key: vcpkg-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}
-					restore-keys: vcpkg-${{ runner.os }}-
+      - name: Install Build Dependencies
+        run: |
+          choco install pkgconfiglite -y
+          vcpkg install poppler:x64-windows quazip:x64-windows --clean-after-build
 
-			- name: Install Build Dependencies
-				run: |
-					choco install pkgconfiglite -y
-					# Adding --clean-after-build is vital to prevent buildtree bloat
-					vcpkg install poppler[core]:x64-windows quazip:x64-windows --clean-after-build
+      - name: Install Qt 6.8
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.3'
+          host: 'windows'
+          target: 'desktop'
+          arch: 'win64_msvc2022_64'
+          modules: 'qtwebengine qtmultimedia qtpositioning qtwebchannel'
+          # Use the cache feature of the action itself
+          cache: true
 
-			- name: Install Qt 6.8
-				uses: jurplel/install-qt-action@v4
-				with:
-					version: '6.8.3'
-					host: 'windows'
-					target: 'desktop'
-					arch: 'win64_msvc2022_64'
-					modules: 'qtwebengine qtmultimedia qtpositioning qtwebchannel'
-					cache: true
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
 
-			- name: Setup MSVC
-				uses: ilammy/msvc-dev-cmd@v1
+      - name: Configure CMake
+        run: |
+          cmake -B build -S . `
+            -G "Ninja" `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_PREFIX_PATH="$env:Qt6_DIR" `
+            -DCMAKE_TOOLCHAIN_FILE="C:/vcpkg/scripts/buildsystems/vcpkg.cmake"
 
-			- name: Configure CMake
-				run: |
-					cmake -B build -S . `
-						-G "Ninja" `
-						-DCMAKE_BUILD_TYPE=Release `
-						-DCMAKE_PREFIX_PATH="$env:Qt6_DIR" `
-						-DCMAKE_TOOLCHAIN_FILE="C:/vcpkg/scripts/buildsystems/vcpkg.cmake" `
-						-DVCPKG_TARGET_TRIPLET=x64-windows `
-						-DQT_NO_PACKAGE_VERSION_CHECK=ON
-
-			- name: Build
-				run: cmake --build build --config Release
+      - name: Build
+        run: cmake --build build --config Release
