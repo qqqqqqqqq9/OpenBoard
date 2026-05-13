@@ -5,6 +5,7 @@ on:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  VCPKG_BINARY_SOURCES: "clear;nuget,GitHub,readwrite"
 
 jobs:
   build:
@@ -18,21 +19,27 @@ jobs:
           submodules: recursive
 
       - name: Free Disk Space
-        # Targets only non-system areas to avoid "Access Denied" errors
         run: |
-          Write-Host "Cleaning temporary and heavy SDK folders..."
+          # Remove heavy pre-installed software to clear ~20GB+
+          Write-Host "Clearing large SDKs..."
           $ErrorActionPreference = 'SilentlyContinue'
           Remove-Item -Recurse -Force "C:\Program Files\Android"
           Remove-Item -Recurse -Force "C:\Program Files (x86)\Android"
-          Remove-Item -Recurse -Force "$env:TEMP\*"
-          # Clean vcpkg cache if it exists from previous runs/pre-installs
-          if (Test-Path "C:\vcpkg\downloads") { Remove-Item -Recurse -Force "C:\vcpkg\downloads\*" }
+          Remove-Item -Recurse -Force "C:\Microsoft\AndroidSDK"
+          Remove-Item -Recurse -Force "C:\Program Files\dotnet"
           Write-Host "Cleanup complete."
+
+      # This caches the vcpkg artifacts so you don't rebuild dependencies every time
+      - name: Restore vcpkg
+        uses: actions/cache@v4
+        with:
+          path: $VCPKG_INSTALLATION_ROOT/installed
+          key: vcpkg-${{ runner.os }}-${{ hashFiles('vcpkg.json') }} # If you have a vcpkg.json
+          restore-keys: vcpkg-${{ runner.os }}-
 
       - name: Install Build Dependencies
         run: |
           choco install pkgconfiglite -y
-          # vcpkg is pre-installed on GitHub runners; we use it to install deps
           vcpkg install poppler:x64-windows quazip:x64-windows --clean-after-build
 
       - name: Install Qt 6.8
@@ -43,6 +50,8 @@ jobs:
           target: 'desktop'
           arch: 'win64_msvc2022_64'
           modules: 'qtwebengine qtmultimedia qtpositioning qtwebchannel'
+          # Use the cache feature of the action itself
+          cache: true
 
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
@@ -50,18 +59,10 @@ jobs:
       - name: Configure CMake
         run: |
           cmake -B build -S . `
-            -G "Visual Studio 17 2022" `
-            -A x64 `
+            -G "Ninja" `
             -DCMAKE_BUILD_TYPE=Release `
             -DCMAKE_PREFIX_PATH="$env:Qt6_DIR" `
             -DCMAKE_TOOLCHAIN_FILE="C:/vcpkg/scripts/buildsystems/vcpkg.cmake"
 
       - name: Build
-        run: cmake --build build --config Release --parallel 4
-
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: OpenBoard-dev-win64
-          path: build/Release/
-          if-no-files-found: warn
+        run: cmake --build build --config Release
