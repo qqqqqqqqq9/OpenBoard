@@ -38,7 +38,6 @@ jobs:
         run: |
           choco install ninja pkgconfiglite -y
 
-      # Prevent runner disk exhaustion
       - name: Free Disk Space
         shell: pwsh
         run: |
@@ -55,18 +54,22 @@ jobs:
           Write-Host "Disk space after cleanup:"
           Get-PSDrive
 
-      # Pin vcpkg version for reproducibility
       - name: Bootstrap vcpkg
         shell: pwsh
         run: |
           git clone https://github.com/microsoft/vcpkg C:\vcpkg
+
           cd C:\vcpkg
 
           git checkout 2025.04.09
 
           .\bootstrap-vcpkg.bat
 
-      # Restore binary cache
+      - name: Fix VCPKG_ROOT
+        shell: pwsh
+        run: |
+          echo "VCPKG_ROOT=C:\vcpkg" >> $env:GITHUB_ENV
+
       - name: Restore vcpkg Binary Cache
         uses: actions/cache@v4
         with:
@@ -75,7 +78,6 @@ jobs:
           restore-keys: |
             vcpkg-bin-${{ runner.os }}-
 
-      # Restore installed packages
       - name: Restore vcpkg Installed Cache
         uses: actions/cache@v4
         with:
@@ -86,20 +88,20 @@ jobs:
           restore-keys: |
             vcpkg-installed-${{ runner.os }}-
 
-      # Install ONLY non-Qt dependencies
-      # Do NOT allow vcpkg to build Qt
+      # IMPORTANT:
+      # Use Poppler core only to avoid Qt being compiled by vcpkg
       - name: Install Build Dependencies
         shell: pwsh
         run: |
           C:\vcpkg\vcpkg.exe install `
-            poppler[cpp]:x64-windows `
+            poppler[core]:x64-windows `
+            --x-no-default-features `
             quazip:x64-windows `
             zlib:x64-windows `
             freetype:x64-windows `
             --clean-after-build `
             --disable-metrics
 
-      # Install precompiled Qt binaries
       - name: Install Qt 6.8
         uses: jurplel/install-qt-action@v4
         with:
@@ -145,7 +147,6 @@ jobs:
         run: |
           cmake --build build --config Release --parallel
 
-      # Optional: show generated binaries
       - name: List Build Outputs
         shell: pwsh
         run: |
