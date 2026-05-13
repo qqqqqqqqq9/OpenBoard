@@ -5,9 +5,14 @@ on:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  VCPKG_BINARY_SOURCES: "clear;nuget,GitHub,readwrite"
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
   POWERSHELL_TELEMETRY_OPTOUT: 1
+
+  # vcpkg
+  VCPKG_FEATURE_FLAGS: binarycaching
+  VCPKG_BINARY_SOURCES: clear;default,readwrite
+  VCPKG_DEFAULT_BINARY_CACHE: C:\vcpkg-cache
+  VCPKG_FORCE_SYSTEM_BINARIES: 1
 
 jobs:
   build:
@@ -23,14 +28,17 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.x'
+          python-version: "3.x"
 
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
 
-      - name: Install Ninja
-        run: choco install ninja -y
+      - name: Install Tools
+        shell: pwsh
+        run: |
+          choco install ninja pkgconfiglite -y
 
+      # Prevent runner disk exhaustion
       - name: Free Disk Space
         shell: pwsh
         run: |
@@ -47,40 +55,76 @@ jobs:
           Write-Host "Disk space after cleanup:"
           Get-PSDrive
 
-      - name: Restore vcpkg Cache
+      # Pin vcpkg version for reproducibility
+      - name: Bootstrap vcpkg
+        shell: pwsh
+        run: |
+          git clone https://github.com/microsoft/vcpkg C:\vcpkg
+          cd C:\vcpkg
+
+          git checkout 2025.04.09
+
+          .\bootstrap-vcpkg.bat
+
+      # Restore binary cache
+      - name: Restore vcpkg Binary Cache
+        uses: actions/cache@v4
+        with:
+          path: C:\vcpkg-cache
+          key: vcpkg-bin-${{ runner.os }}-${{ hashFiles('**/vcpkg.json') }}
+          restore-keys: |
+            vcpkg-bin-${{ runner.os }}-
+
+      # Restore installed packages
+      - name: Restore vcpkg Installed Cache
         uses: actions/cache@v4
         with:
           path: |
             C:\vcpkg\installed
             C:\vcpkg\packages
-          key: vcpkg-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}
+          key: vcpkg-installed-${{ runner.os }}-${{ hashFiles('**/vcpkg.json') }}
           restore-keys: |
-            vcpkg-${{ runner.os }}-
+            vcpkg-installed-${{ runner.os }}-
 
+      # Install ONLY non-Qt dependencies
+      # Do NOT allow vcpkg to build Qt
       - name: Install Build Dependencies
         shell: pwsh
         run: |
-          choco install pkgconfiglite -y
-
-          vcpkg install `
-            poppler[core]:x64-windows `
+          C:\vcpkg\vcpkg.exe install `
+            poppler[cpp]:x64-windows `
             quazip:x64-windows `
-            --clean-after-build
+            zlib:x64-windows `
+            freetype:x64-windows `
+            --clean-after-build `
+            --disable-metrics
 
+      # Install precompiled Qt binaries
       - name: Install Qt 6.8
         uses: jurplel/install-qt-action@v4
         with:
-          version: '6.8.3'
-          host: 'windows'
-          target: 'desktop'
-          arch: 'win64_msvc2022_64'
-          modules: 'qtwebengine qtmultimedia qtpositioning qtwebchannel'
+          version: "6.8.3"
+          host: "windows"
+          target: "desktop"
+          arch: "win64_msvc2022_64"
+
+          modules: >
+            qtwebengine
+            qtmultimedia
+            qtpositioning
+            qtwebchannel
+
           cache: true
 
       - name: Verify Qt Installation
         shell: pwsh
         run: |
           Write-Host "Qt6_ROOT = $env:Qt6_ROOT"
+
+          if (!(Test-Path $env:Qt6_ROOT)) {
+            throw "Qt installation not found"
+          }
+
           dir $env:Qt6_ROOT
 
       - name: Configure CMake
@@ -93,10 +137,21 @@ jobs:
             -DCMAKE_PREFIX_PATH="$env:Qt6_ROOT" `
             -DCMAKE_TOOLCHAIN_FILE="C:/vcpkg/scripts/buildsystems/vcpkg.cmake" `
             -DVCPKG_TARGET_TRIPLET=x64-windows `
-            -DQT_NO_PACKAGE_VERSION_CHECK=ON
+            -DQT_NO_PACKAGE_VERSION_CHECK=ON `
+            -DBUILD_TESTING=OFF
 
       - name: Build
-        run: cmake --build build --parallel
+        shell: pwsh
+        run: |
+          cmake --build build --config Release --parallel
+
+      # Optional: show generated binaries
+      - name: List Build Outputs
+        shell: pwsh
+        run: |
+          Get-ChildItem -Path build -Recurse `
+            -Include *.exe,*.dll `
+            | Select-Object FullName
 
       - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4
