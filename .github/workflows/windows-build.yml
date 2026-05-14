@@ -70,9 +70,6 @@ jobs:
           restore-keys: |
             vcpkg-${{ runner.os }}-
 
-      # -----------------------------
-      # Create vcpkg manifest in CI
-      # -----------------------------
       - name: Create vcpkg manifest
         shell: pwsh
         run: |
@@ -93,10 +90,13 @@ jobs:
           }
           '@ | Out-File -Encoding utf8 vcpkg.json
 
-      # -----------------------------
-      # Install Qt (prebuilt)
-      # -----------------------------
+      - name: Setup pkg-config paths
+        shell: pwsh
+        run: |
+          echo "PKG_CONFIG_PATH=C:\vcpkg\installed\x64-windows\lib\pkgconfig;C:\vcpkg\installed\x64-windows\share\pkgconfig" >> $env:GITHUB_ENV
+
       - name: Install Qt 6.8
+        id: qt
         uses: jurplel/install-qt-action@v4
         with:
           version: "6.8.3"
@@ -110,34 +110,12 @@ jobs:
             qtwebchannel
           cache: true
 
-      # -----------------------------
-      # Robust Qt detection (NO env vars dependency)
-      # -----------------------------
-      - name: Detect Qt installation
+      - name: Set Qt path
         shell: pwsh
         run: |
-          $qt = Get-ChildItem "C:\Users\runneradmin\work" -Recurse -Directory |
-            Where-Object { $_.FullName -match "msvc2022_64" } |
-            Select-Object -First 1 -ExpandProperty FullName
+          echo "QT_ROOT=${{ steps.qt.outputs.qtpath }}" >> $env:GITHUB_ENV
+          Write-Host "Qt path: ${{ steps.qt.outputs.qtpath }}"
 
-          if (-not $qt) {
-            throw "Qt not found on disk"
-          }
-
-          echo "QT_ROOT=$qt" >> $env:GITHUB_ENV
-          Write-Host "Qt detected at: $qt"
-
-      # -----------------------------
-      # pkg-config for Poppler
-      # -----------------------------
-      - name: Setup pkg-config paths
-        shell: pwsh
-        run: |
-          echo "PKG_CONFIG_PATH=C:\vcpkg\installed\x64-windows\lib\pkgconfig;C:\vcpkg\installed\x64-windows\share\pkgconfig" >> $env:GITHUB_ENV
-
-      # -----------------------------
-      # Configure CMake (IMPORTANT)
-      # -----------------------------
       - name: Configure CMake
         shell: pwsh
         run: |
@@ -152,17 +130,11 @@ jobs:
             -DQT_NO_PACKAGE_VERSION_CHECK=ON `
             -DBUILD_TESTING=OFF
 
-      # -----------------------------
-      # Build
-      # -----------------------------
       - name: Build
         shell: pwsh
         run: |
           cmake --build build --config Release --parallel
 
-      # -----------------------------
-      # Artifacts
-      # -----------------------------
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
