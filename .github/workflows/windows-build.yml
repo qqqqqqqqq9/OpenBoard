@@ -83,17 +83,7 @@ jobs:
           restore-keys: |
             vcpkg-${{ runner.os }}-
 
-      - name: Install Dependencies
-        shell: pwsh
-        run: |
-          C:\vcpkg\vcpkg.exe install `
-            poppler:x64-windows `
-            quazip:x64-windows `
-            zlib:x64-windows `
-            freetype:x64-windows `
-            --clean-after-build `
-            --disable-metrics
-
+      # OpenBoard uses pkg-config to locate Poppler
       - name: Setup pkg-config paths
         shell: pwsh
         run: |
@@ -106,11 +96,13 @@ jobs:
           host: "windows"
           target: "desktop"
           arch: "win64_msvc2022_64"
+
           modules: >
             qtwebengine
             qtmultimedia
             qtpositioning
             qtwebchannel
+
           cache: true
 
       - name: Verify Qt Installation
@@ -124,6 +116,7 @@ jobs:
 
           dir $env:Qt6_ROOT
 
+      # Manifest-mode vcpkg integration happens automatically here
       - name: Configure CMake
         shell: pwsh
         run: |
@@ -134,6 +127,7 @@ jobs:
             -DCMAKE_PREFIX_PATH="$env:Qt6_ROOT" `
             -DCMAKE_TOOLCHAIN_FILE="C:/vcpkg/scripts/buildsystems/vcpkg.cmake" `
             -DVCPKG_TARGET_TRIPLET=x64-windows `
+            -DVCPKG_MANIFEST_MODE=ON `
             -DQT_NO_PACKAGE_VERSION_CHECK=ON `
             -DBUILD_TESTING=OFF
 
