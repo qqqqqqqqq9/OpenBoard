@@ -48,11 +48,8 @@ jobs:
         shell: pwsh
         run: |
           git clone https://github.com/microsoft/vcpkg C:\vcpkg
-
           cd C:\vcpkg
-
           git checkout 2025.04.09
-
           .\bootstrap-vcpkg.bat
 
       - name: Fix VCPKG_ROOT
@@ -69,11 +66,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: C:\vcpkg-cache
-          key: vcpkg-${{ runner.os }}-${{ github.sha }}
+          key: vcpkg-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}
           restore-keys: |
             vcpkg-${{ runner.os }}-
 
-      # Create manifest dynamically
+      # -----------------------------
+      # Create vcpkg manifest in CI
+      # -----------------------------
       - name: Create vcpkg manifest
         shell: pwsh
         run: |
@@ -85,9 +84,7 @@ jobs:
               {
                 "name": "poppler",
                 "default-features": false,
-                "features": [
-                  "cpp"
-                ]
+                "features": ["cpp"]
               },
               "quazip",
               "zlib",
@@ -96,12 +93,9 @@ jobs:
           }
           '@ | Out-File -Encoding utf8 vcpkg.json
 
-      # OpenBoard uses pkg-config for Poppler
-      - name: Setup pkg-config paths
-        shell: pwsh
-        run: |
-          echo "PKG_CONFIG_PATH=C:\vcpkg\installed\x64-windows\lib\pkgconfig;C:\vcpkg\installed\x64-windows\share\pkgconfig" >> $env:GITHUB_ENV
-
+      # -----------------------------
+      # Install Qt (prebuilt)
+      # -----------------------------
       - name: Install Qt 6.8
         uses: jurplel/install-qt-action@v4
         with:
@@ -116,17 +110,34 @@ jobs:
             qtwebchannel
           cache: true
 
-      - name: Verify Qt
+      # -----------------------------
+      # Robust Qt detection (NO env vars dependency)
+      # -----------------------------
+      - name: Detect Qt installation
         shell: pwsh
         run: |
-          Write-Host "QtRootDir = $env:QtRootDir"
+          $qt = Get-ChildItem "C:\Users\runneradmin\work" -Recurse -Directory |
+            Where-Object { $_.FullName -match "msvc2022_64" } |
+            Select-Object -First 1 -ExpandProperty FullName
 
-          if (!(Test-Path $env:QtRootDir)) {
-            throw "Qt installation not found"
+          if (-not $qt) {
+            throw "Qt not found on disk"
           }
 
-          dir $env:QtRootDir
+          echo "QT_ROOT=$qt" >> $env:GITHUB_ENV
+          Write-Host "Qt detected at: $qt"
 
+      # -----------------------------
+      # pkg-config for Poppler
+      # -----------------------------
+      - name: Setup pkg-config paths
+        shell: pwsh
+        run: |
+          echo "PKG_CONFIG_PATH=C:\vcpkg\installed\x64-windows\lib\pkgconfig;C:\vcpkg\installed\x64-windows\share\pkgconfig" >> $env:GITHUB_ENV
+
+      # -----------------------------
+      # Configure CMake (IMPORTANT)
+      # -----------------------------
       - name: Configure CMake
         shell: pwsh
         run: |
@@ -134,26 +145,25 @@ jobs:
             -G Ninja `
             -DCMAKE_BUILD_TYPE=Release `
             -DCMAKE_CXX_STANDARD=17 `
-            -DCMAKE_PREFIX_PATH="$env:QtRootDir" `
+            -DCMAKE_PREFIX_PATH="$env:QT_ROOT" `
             -DCMAKE_TOOLCHAIN_FILE="C:/vcpkg/scripts/buildsystems/vcpkg.cmake" `
             -DVCPKG_TARGET_TRIPLET=x64-windows `
             -DVCPKG_MANIFEST_MODE=ON `
             -DQT_NO_PACKAGE_VERSION_CHECK=ON `
             -DBUILD_TESTING=OFF
 
+      # -----------------------------
+      # Build
+      # -----------------------------
       - name: Build
         shell: pwsh
         run: |
-          cmake --build build --parallel
+          cmake --build build --config Release --parallel
 
-      - name: List Build Outputs
-        shell: pwsh
-        run: |
-          Get-ChildItem -Path build -Recurse `
-            -Include *.exe,*.dll `
-            | Select-Object FullName
-
-      - name: Upload Build Artifacts
+      # -----------------------------
+      # Artifacts
+      # -----------------------------
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: OpenBoard-Windows-Build
