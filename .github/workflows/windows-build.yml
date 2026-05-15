@@ -8,11 +8,6 @@ env:
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
   POWERSHELL_TELEMETRY_OPTOUT: 1
 
-  VCPKG_FEATURE_FLAGS: binarycaching
-  VCPKG_BINARY_SOURCES: clear
-  VCPKG_DEFAULT_BINARY_CACHE: C:\vcpkg-cache
-  VCPKG_FORCE_SYSTEM_BINARIES: 1
-
 jobs:
   build:
     runs-on: windows-2025
@@ -32,14 +27,10 @@ jobs:
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
 
-      - name: Install Tools
+      - name: Install Build Tools
         shell: pwsh
         run: |
           choco install ninja pkgconfiglite -y
-
-      - name: Ensure Ninja in PATH
-        shell: pwsh
-        run: |
           echo "C:\ProgramData\chocolatey\bin" >> $env:GITHUB_PATH
 
       - name: Free Disk Space
@@ -54,43 +45,19 @@ jobs:
         run: |
           git clone https://github.com/microsoft/vcpkg C:\vcpkg
           cd C:\vcpkg
-          git checkout 2025.04.09
           .\bootstrap-vcpkg.bat
 
-      - name: Set VCPKG_ROOT
+      # IMPORTANT:
+      # install ONLY non-Qt dependencies
+      - name: Install Dependencies
         shell: pwsh
         run: |
-          echo "VCPKG_ROOT=C:\vcpkg" >> $env:GITHUB_ENV
-
-      - name: Create vcpkg cache
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path "C:\vcpkg-cache"
-
-      - name: Restore vcpkg cache
-        uses: actions/cache@v4
-        with:
-          path: C:\vcpkg-cache
-          key: vcpkg-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}
-          restore-keys: |
-            vcpkg-${{ runner.os }}-
-
-      # vcpkg manifest (FIXED: no invalid features)
-      - name: Create vcpkg manifest
-        shell: pwsh
-        run: |
-          @'
-          {
-            "name": "openboard-deps",
-            "version": "1.0",
-            "dependencies": [
-              "poppler",
-              "quazip",
-              "zlib",
-              "freetype"
-            ]
-          }
-          '@ | Out-File -Encoding utf8 vcpkg.json
+          C:\vcpkg\vcpkg.exe install `
+            poppler:x64-windows `
+            quazip:x64-windows `
+            zlib:x64-windows `
+            freetype:x64-windows `
+            --disable-metrics
 
       - name: Setup pkg-config
         shell: pwsh
@@ -116,8 +83,9 @@ jobs:
         shell: pwsh
         run: |
           echo "QT_ROOT=${{ steps.qt.outputs.qtpath }}" >> $env:GITHUB_ENV
-          Write-Host "Qt path: ${{ steps.qt.outputs.qtpath }}"
 
+      # CRITICAL:
+      # NO manifest mode
       - name: Configure CMake
         shell: pwsh
         run: |
@@ -128,7 +96,6 @@ jobs:
             -DCMAKE_PREFIX_PATH="$env:QT_ROOT" `
             -DCMAKE_TOOLCHAIN_FILE="C:/vcpkg/scripts/buildsystems/vcpkg.cmake" `
             -DVCPKG_TARGET_TRIPLET=x64-windows `
-            -DVCPKG_MANIFEST_MODE=ON `
             -DQT_NO_PACKAGE_VERSION_CHECK=ON `
             -DBUILD_TESTING=OFF
 
