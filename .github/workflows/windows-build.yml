@@ -43,17 +43,19 @@ jobs:
       - name: Bootstrap vcpkg
         shell: pwsh
         run: |
+          Remove-Item Env:VCPKG_ROOT -ErrorAction SilentlyContinue
+
           git clone https://github.com/microsoft/vcpkg C:\vcpkg
           cd C:\vcpkg
+
           .\bootstrap-vcpkg.bat
 
-      # IMPORTANT:
-      # install ONLY non-Qt dependencies
+      # Install ONLY non-Qt dependencies
       - name: Install Dependencies
         shell: pwsh
         run: |
           C:\vcpkg\vcpkg.exe install `
-            poppler:x64-windows `
+            poppler[core]:x64-windows `
             quazip:x64-windows `
             zlib:x64-windows `
             freetype:x64-windows `
@@ -84,8 +86,6 @@ jobs:
         run: |
           echo "QT_ROOT=${{ steps.qt.outputs.qtpath }}" >> $env:GITHUB_ENV
 
-      # CRITICAL:
-      # NO manifest mode
       - name: Configure CMake
         shell: pwsh
         run: |
@@ -94,6 +94,7 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release `
             -DCMAKE_CXX_STANDARD=17 `
             -DCMAKE_PREFIX_PATH="$env:QT_ROOT" `
+            -DQT_HOST_PATH="$env:QT_ROOT" `
             -DCMAKE_TOOLCHAIN_FILE="C:/vcpkg/scripts/buildsystems/vcpkg.cmake" `
             -DVCPKG_TARGET_TRIPLET=x64-windows `
             -DQT_NO_PACKAGE_VERSION_CHECK=ON `
