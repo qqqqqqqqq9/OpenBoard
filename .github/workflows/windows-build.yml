@@ -1,114 +1,187 @@
 name: Build OpenBoard Dev (Qt 6.8)
 
 on:
-  workflow_dispatch:
+workflow_dispatch:
 
 env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
-  POWERSHELL_TELEMETRY_OPTOUT: 1
+FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+POWERSHELL_TELEMETRY_OPTOUT: 1
 
 jobs:
-  build:
-    runs-on: windows-2025
+build:
+runs-on: windows-2025
 
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-        with:
-          ref: dev
-          submodules: recursive
+```
+steps:
+  - name: Checkout Repository
+    uses: actions/checkout@v4
+    with:
+      ref: dev
+      submodules: recursive
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.x"
+  # ------------------------------------------------------------
+  # Free as much disk space as possible BEFORE anything else
+  # ------------------------------------------------------------
+  - name: Free Disk Space
+    shell: pwsh
+    run: |
+      Remove-Item "C:\Program Files\dotnet" -Recurse -Force -ErrorAction SilentlyContinue
+      Remove-Item "C:\Program Files\Android" -Recurse -Force -ErrorAction SilentlyContinue
+      Remove-Item "C:\hostedtoolcache\windows\CodeQL" -Recurse -Force -ErrorAction SilentlyContinue
+      Remove-Item "C:\Program Files\Microsoft SDKs" -Recurse -Force -ErrorAction SilentlyContinue
+      Remove-Item "C:\Program Files (x86)\Windows Kits\10\References" -Recurse -Force -ErrorAction SilentlyContinue
+      Remove-Item "C:\Windows\Installer\$PatchCache$" -Recurse -Force -ErrorAction SilentlyContinue
 
-      - name: Setup MSVC
-        uses: ilammy/msvc-dev-cmd@v1
+      docker system prune -af 2>$null
 
-      - name: Install Build Tools
-        shell: pwsh
-        run: |
-          choco install ninja pkgconfiglite -y
-          echo "C:\ProgramData\chocolatey\bin" >> $env:GITHUB_PATH
+      Write-Host "Remaining disk space:"
+      Get-PSDrive C
 
-      - name: Free Disk Space
-        shell: pwsh
-        run: |
-          Remove-Item "C:\Program Files\dotnet" -Recurse -Force -ErrorAction SilentlyContinue
-          Remove-Item "C:\hostedtoolcache\windows\CodeQL" -Recurse -Force -ErrorAction SilentlyContinue
-          Remove-Item "C:\Program Files\Android" -Recurse -Force -ErrorAction SilentlyContinue
+  # ------------------------------------------------------------
+  # Python
+  # ------------------------------------------------------------
+  - name: Setup Python
+    uses: actions/setup-python@v5
+    with:
+      python-version: "3.x"
 
-      - name: Bootstrap vcpkg
-        shell: pwsh
-        run: |
-          Remove-Item Env:VCPKG_ROOT -ErrorAction SilentlyContinue
+  # ------------------------------------------------------------
+  # MSVC
+  # ------------------------------------------------------------
+  - name: Setup MSVC
+    uses: ilammy/msvc-dev-cmd@v1
 
-          git clone https://github.com/microsoft/vcpkg C:\vcpkg
-          cd C:\vcpkg
+  # ------------------------------------------------------------
+  # Ninja + pkg-config
+  # ------------------------------------------------------------
+  - name: Install Build Tools
+    shell: pwsh
+    run: |
+      choco install ninja pkgconfiglite -y
+      echo "C:\ProgramData\chocolatey\bin" >> $env:GITHUB_PATH
 
-          .\bootstrap-vcpkg.bat
+  # ------------------------------------------------------------
+  # Bootstrap vcpkg
+  # ------------------------------------------------------------
+  - name: Bootstrap vcpkg
+    shell: pwsh
+    run: |
+      git clone https://github.com/microsoft/vcpkg C:\vcpkg
+      cd C:\vcpkg
+      .\bootstrap-vcpkg.bat
 
-      # Install ONLY non-Qt dependencies
-      - name: Install Dependencies
-        shell: pwsh
-        run: |
-          C:\vcpkg\vcpkg.exe install `
-            poppler[core]:x64-windows `
-            quazip:x64-windows `
-            zlib:x64-windows `
-            freetype:x64-windows `
-            --disable-metrics
+  # ------------------------------------------------------------
+  # ONLY install NON-QT dependencies
+  # DO NOT INSTALL QT THROUGH VCPKG
+  # ------------------------------------------------------------
+  - name: Install Dependencies
+    shell: pwsh
+    run: |
+      C:\vcpkg\vcpkg.exe install `
+        poppler[core]:x64-windows `
+        quazip:x64-windows `
+        zlib:x64-windows `
+        freetype:x64-windows `
+        --disable-metrics
 
-      - name: Setup pkg-config
-        shell: pwsh
-        run: |
-          echo "PKG_CONFIG_PATH=C:\vcpkg\installed\x64-windows\lib\pkgconfig;C:\vcpkg\installed\x64-windows\share\pkgconfig" >> $env:GITHUB_ENV
+  # ------------------------------------------------------------
+  # Install PREBUILT Qt binaries
+  # ------------------------------------------------------------
+  - name: Install Qt 6.8
+    id: qt
+    uses: jurplel/install-qt-action@v4
+    with:
+      version: "6.8.3"
+      host: "windows"
+      target: "desktop"
+      arch: "win64_msvc2022_64"
+      cache: true
+      modules: >
+        qtwebengine
+        qtwebchannel
+        qtmultimedia
+        qtpositioning
 
-      - name: Install Qt 6.8
-        id: qt
-        uses: jurplel/install-qt-action@v4
-        with:
-          version: "6.8.3"
-          host: "windows"
-          target: "desktop"
-          arch: "win64_msvc2022_64"
-          modules: >
-            qtwebengine
-            qtmultimedia
-            qtpositioning
-            qtwebchannel
-          cache: true
+  # ------------------------------------------------------------
+  # Export Qt paths
+  # ------------------------------------------------------------
+  - name: Set Qt Environment
+    shell: pwsh
+    run: |
+      echo "QT_ROOT=${{ steps.qt.outputs.qtpath }}" >> $env:GITHUB_ENV
+      echo "${{ steps.qt.outputs.qtpath }}\bin" >> $env:GITHUB_PATH
 
-      - name: Set Qt path
-        shell: pwsh
-        run: |
-          echo "QT_ROOT=${{ steps.qt.outputs.qtpath }}" >> $env:GITHUB_ENV
+      Write-Host "Qt path:"
+      Write-Host "${{ steps.qt.outputs.qtpath }}"
 
-      - name: Configure CMake
-        shell: pwsh
-        run: |
-          cmake -B build -S . `
-            -G Ninja `
-            -DCMAKE_BUILD_TYPE=Release `
-            -DCMAKE_CXX_STANDARD=17 `
-            -DCMAKE_PREFIX_PATH="$env:QT_ROOT" `
-            -DQT_HOST_PATH="$env:QT_ROOT" `
-            -DCMAKE_TOOLCHAIN_FILE="C:/vcpkg/scripts/buildsystems/vcpkg.cmake" `
-            -DVCPKG_TARGET_TRIPLET=x64-windows `
-            -DQT_NO_PACKAGE_VERSION_CHECK=ON `
-            -DBUILD_TESTING=OFF
+      Get-ChildItem "${{ steps.qt.outputs.qtpath }}"
 
-      - name: Build
-        shell: pwsh
-        run: |
-          cmake --build build --config Release --parallel
+  # ------------------------------------------------------------
+  # pkg-config
+  # ------------------------------------------------------------
+  - name: Setup pkg-config
+    shell: pwsh
+    run: |
+      echo "PKG_CONFIG_PATH=C:\vcpkg\installed\x64-windows\lib\pkgconfig;C:\vcpkg\installed\x64-windows\share\pkgconfig" >> $env:GITHUB_ENV
 
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: OpenBoard-Windows-Build
-          path: |
-            build/**/*.exe
-            build/**/*.dll
+  # ------------------------------------------------------------
+  # Configure
+  # ------------------------------------------------------------
+  - name: Configure CMake
+    shell: pwsh
+    run: |
+      cmake -B build -S . `
+        -G Ninja `
+        -DCMAKE_BUILD_TYPE=Release `
+        -DCMAKE_CXX_STANDARD=17 `
+        -DCMAKE_PREFIX_PATH="$env:QT_ROOT" `
+        -DQT_HOST_PATH="$env:QT_ROOT" `
+        -DCMAKE_TOOLCHAIN_FILE="C:/vcpkg/scripts/buildsystems/vcpkg.cmake" `
+        -DVCPKG_TARGET_TRIPLET=x64-windows `
+        -DVCPKG_BUILD_TYPE=release `
+        -DVCPKG_MANIFEST_MODE=OFF `
+        -DQT_NO_PACKAGE_VERSION_CHECK=ON `
+        -DBUILD_TESTING=OFF
+
+  # ------------------------------------------------------------
+  # Build
+  # ------------------------------------------------------------
+  - name: Build
+    shell: pwsh
+    run: |
+      cmake --build build --config Release --parallel
+
+  # ------------------------------------------------------------
+  # Deploy Qt DLLs
+  # ------------------------------------------------------------
+  - name: Deploy Qt Runtime
+    shell: pwsh
+    run: |
+      $windeployqt = "$env:QT_ROOT\bin\windeployqt.exe"
+
+      $exe = Get-ChildItem build -Recurse -Filter *.exe |
+        Where-Object { $_.Name -match "OpenBoard" } |
+        Select-Object -First 1
+
+      if ($exe -eq $null) {
+        Write-Error "OpenBoard executable not found"
+        exit 1
+      }
+
+      & $windeployqt `
+        --release `
+        --compiler-runtime `
+        --webenginecore `
+        $exe.FullName
+
+  # ------------------------------------------------------------
+  # Upload artifacts
+  # ------------------------------------------------------------
+  - name: Upload artifacts
+    uses: actions/upload-artifact@v4
+    with:
+      name: OpenBoard-Windows-Build
+      path: |
+        build/**
+```
