@@ -184,4 +184,3 @@ steps:
       name: OpenBoard-Windows-Build
       path: |
         build/**
-```
