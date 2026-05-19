@@ -129,16 +129,12 @@ jobs:
       # QT
       # --------------------------------------------------------------------
       - name: Install Qt 6.8
-        id: qt
         uses: jurplel/install-qt-action@v4
         with:
           version: "6.8.3"
           host: "windows"
           target: "desktop"
           arch: "win64_msvc2022_64"
-
-          # IMPORTANT:
-          # install on D: to avoid C: exhaustion
           dir: "D:\\Qt"
 
           modules: >
@@ -147,7 +143,6 @@ jobs:
             qtpositioning
             qtwebchannel
 
-          # Qt cache can exceed GitHub cache limits
           cache: false
 
       # --------------------------------------------------------------------
@@ -155,7 +150,17 @@ jobs:
       # --------------------------------------------------------------------
       - name: Set Qt Path
         run: |
-          echo "QT_ROOT=${{ steps.qt.outputs.qtpath }}" >> $env:GITHUB_ENV
+          $qtPath = Get-ChildItem "D:\Qt" -Directory -Recurse |
+            Where-Object { $_.FullName -match "msvc2022_64$" } |
+            Select-Object -First 1 -ExpandProperty FullName
+
+          if (-not $qtPath) {
+            throw "Qt installation path not found."
+          }
+
+          Write-Host "Detected Qt path: $qtPath"
+
+          echo "QT_ROOT=$qtPath" >> $env:GITHUB_ENV
 
       # --------------------------------------------------------------------
       # VERIFY QT INSTALL
@@ -163,6 +168,11 @@ jobs:
       - name: Verify Qt Modules
         run: |
           Write-Host "QT_ROOT = $env:QT_ROOT"
+
+          if (-not $env:QT_ROOT) {
+            throw "QT_ROOT is empty"
+          }
+
           Get-ChildItem "$env:QT_ROOT\lib\cmake"
 
       # --------------------------------------------------------------------
@@ -174,7 +184,6 @@ jobs:
             -G Ninja `
             -DCMAKE_BUILD_TYPE=Release `
             -DCMAKE_CXX_STANDARD=17 `
-            -DQt6_DIR="$env:QT_ROOT/lib/cmake/Qt6" `
             -DCMAKE_PREFIX_PATH="$env:QT_ROOT" `
             -DCMAKE_TOOLCHAIN_FILE="D:/vcpkg/scripts/buildsystems/vcpkg.cmake" `
             -DVCPKG_TARGET_TRIPLET=x64-windows `
@@ -193,7 +202,12 @@ jobs:
       # --------------------------------------------------------------------
       - name: Deploy Qt Runtime
         run: |
-          $exe = Get-ChildItem D:\build -Filter "*.exe" -Recurse | Select-Object -First 1
+          $exe = Get-ChildItem D:\build -Filter "*.exe" -Recurse |
+            Select-Object -First 1
+
+          if (-not $exe) {
+            throw "No executable found in build directory."
+          }
 
           Write-Host "Deploying $($exe.FullName)"
 
@@ -209,7 +223,7 @@ jobs:
       # --------------------------------------------------------------------
       - name: Cleanup Before Upload
         run: |
-          Get-ChildItem D:\build -Include *.obj,*.pdb,*.ilk -Recurse -ErrorAction SilentlyContinue | `
+          Get-ChildItem D:\build -Include *.obj,*.pdb,*.ilk -Recurse -ErrorAction SilentlyContinue |
             Remove-Item -Force -ErrorAction SilentlyContinue
 
       # --------------------------------------------------------------------
