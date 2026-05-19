@@ -18,14 +18,13 @@ jobs:
 
     steps:
       # --------------------------------------------------------------------
-      # AGGRESSIVE DISK CLEANUP
+      # FREE DISK SPACE
       # --------------------------------------------------------------------
       - name: Free Disk Space
         run: |
           Write-Host "Disk space BEFORE cleanup:"
           Get-PSDrive C,D
 
-          # Huge preinstalled SDKs/tools
           Remove-Item "C:\Program Files\Android" -Recurse -Force -ErrorAction SilentlyContinue
           Remove-Item "C:\Program Files\dotnet" -Recurse -Force -ErrorAction SilentlyContinue
           Remove-Item "C:\hostedtoolcache\windows\CodeQL" -Recurse -Force -ErrorAction SilentlyContinue
@@ -33,19 +32,16 @@ jobs:
           Remove-Item "$env:USERPROFILE\.rustup" -Recurse -Force -ErrorAction SilentlyContinue
           Remove-Item "C:\ghcup" -Recurse -Force -ErrorAction SilentlyContinue
           Remove-Item "C:\Program Files\LLVM" -Recurse -Force -ErrorAction SilentlyContinue
-          Remove-Item "C:\Program Files\MongoDB" -Recurse -Force -ErrorAction SilentlyContinue
           Remove-Item "C:\Program Files\PostgreSQL" -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item "C:\Program Files\MongoDB" -Recurse -Force -ErrorAction SilentlyContinue
           Remove-Item "C:\Program Files\Amazon" -Recurse -Force -ErrorAction SilentlyContinue
           Remove-Item "C:\Program Files\Microsoft SDKs" -Recurse -Force -ErrorAction SilentlyContinue
-
-          # Temp cleanup
-          Remove-Item "$env:TEMP\*" -Recurse -Force -ErrorAction SilentlyContinue
 
           Write-Host "Disk space AFTER cleanup:"
           Get-PSDrive C,D
 
       # --------------------------------------------------------------------
-      # REPOSITORY
+      # CHECKOUT
       # --------------------------------------------------------------------
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -76,14 +72,14 @@ jobs:
           echo "C:\ProgramData\chocolatey\bin" >> $env:GITHUB_PATH
 
       # --------------------------------------------------------------------
-      # PREPARE D: DRIVE
+      # DIRECTORIES ON D:
       # --------------------------------------------------------------------
       - name: Prepare Directories
         run: |
           New-Item -ItemType Directory -Force D:\build | Out-Null
           New-Item -ItemType Directory -Force D:\vcpkg | Out-Null
-          New-Item -ItemType Directory -Force D:\Qt | Out-Null
           New-Item -ItemType Directory -Force D:\vcpkg-cache | Out-Null
+          New-Item -ItemType Directory -Force D:\Qt | Out-Null
 
       # --------------------------------------------------------------------
       # VCPKG CACHE
@@ -92,9 +88,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: D:\vcpkg-cache
-          key: vcpkg-x64-windows-${{ runner.os }}-${{ hashFiles('**/vcpkg.json', '**/CMakeLists.txt') }}
+          key: vcpkg-x64-windows-${{ hashFiles('**/CMakeLists.txt', '**/vcpkg.json') }}
           restore-keys: |
-            vcpkg-x64-windows-${{ runner.os }}-
+            vcpkg-x64-windows-
 
       # --------------------------------------------------------------------
       # VCPKG
@@ -123,7 +119,7 @@ jobs:
             --disable-metrics
 
       # --------------------------------------------------------------------
-      # PKG CONFIG
+      # PKG-CONFIG
       # --------------------------------------------------------------------
       - name: Setup pkg-config
         run: |
@@ -142,7 +138,7 @@ jobs:
           arch: "win64_msvc2022_64"
 
           # IMPORTANT:
-          # install onto D: instead of C:
+          # install on D: to avoid C: exhaustion
           dir: "D:\\Qt"
 
           modules: >
@@ -151,14 +147,23 @@ jobs:
             qtpositioning
             qtwebchannel
 
+          # Qt cache can exceed GitHub cache limits
           cache: false
 
       # --------------------------------------------------------------------
-      # QT ENV
+      # QT ENVIRONMENT
       # --------------------------------------------------------------------
       - name: Set Qt Path
         run: |
           echo "QT_ROOT=${{ steps.qt.outputs.qtpath }}" >> $env:GITHUB_ENV
+
+      # --------------------------------------------------------------------
+      # VERIFY QT INSTALL
+      # --------------------------------------------------------------------
+      - name: Verify Qt Modules
+        run: |
+          Write-Host "QT_ROOT = $env:QT_ROOT"
+          Get-ChildItem "$env:QT_ROOT\lib\cmake"
 
       # --------------------------------------------------------------------
       # CONFIGURE
@@ -169,6 +174,7 @@ jobs:
             -G Ninja `
             -DCMAKE_BUILD_TYPE=Release `
             -DCMAKE_CXX_STANDARD=17 `
+            -DQt6_DIR="$env:QT_ROOT/lib/cmake/Qt6" `
             -DCMAKE_PREFIX_PATH="$env:QT_ROOT" `
             -DCMAKE_TOOLCHAIN_FILE="D:/vcpkg/scripts/buildsystems/vcpkg.cmake" `
             -DVCPKG_TARGET_TRIPLET=x64-windows `
@@ -187,7 +193,9 @@ jobs:
       # --------------------------------------------------------------------
       - name: Deploy Qt Runtime
         run: |
-          $exe = Get-ChildItem -Path D:\build -Filter "*.exe" -Recurse | Select-Object -First 1
+          $exe = Get-ChildItem D:\build -Filter "*.exe" -Recurse | Select-Object -First 1
+
+          Write-Host "Deploying $($exe.FullName)"
 
           & "$env:QT_ROOT\bin\windeployqt.exe" `
             --release `
@@ -197,11 +205,12 @@ jobs:
             $exe.FullName
 
       # --------------------------------------------------------------------
-      # CLEAN BUILD CACHE BEFORE ARTIFACT
+      # CLEAN LARGE DEBUG FILES
       # --------------------------------------------------------------------
       - name: Cleanup Before Upload
         run: |
-          Get-ChildItem D:\build -Include *.obj,*.pdb,*.ilk -Recurse -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+          Get-ChildItem D:\build -Include *.obj,*.pdb,*.ilk -Recurse -ErrorAction SilentlyContinue | `
+            Remove-Item -Force -ErrorAction SilentlyContinue
 
       # --------------------------------------------------------------------
       # ARTIFACTS
@@ -218,7 +227,10 @@ jobs:
             D:\build\platforms\
             D:\build\styles\
             D:\build\imageformats\
+            D:\build\iconengines\
+            D:\build\tls\
             D:\build\resources\
             D:\build\translations\
             D:\build\QtWebEngineProcess.exe
             D:\build\qtwebengine_*.pak
+            D:\build\*.dat
