@@ -68,11 +68,11 @@ jobs:
       # --------------------------------------------------------------------
       - name: Install Build Tools
         run: |
-          choco install ninja --no-progress -y
+          choco install ninja pkgconfiglite --no-progress -y
           echo "C:\ProgramData\chocolatey\bin" >> $env:GITHUB_PATH
 
       # --------------------------------------------------------------------
-      # DIRECTORIES ON D:
+      # DIRECTORIES
       # --------------------------------------------------------------------
       - name: Prepare Directories
         run: |
@@ -82,13 +82,13 @@ jobs:
           New-Item -ItemType Directory -Force D:\Qt | Out-Null
 
       # --------------------------------------------------------------------
-      # VCPKG CACHE
+      # CACHE
       # --------------------------------------------------------------------
       - name: Restore vcpkg Binary Cache
         uses: actions/cache@v4
         with:
           path: D:\vcpkg-cache
-          key: vcpkg-x64-windows-${{ hashFiles('**/CMakeLists.txt', '**/vcpkg.json') }}
+          key: vcpkg-x64-windows-${{ hashFiles('**/CMakeLists.txt') }}
           restore-keys: |
             vcpkg-x64-windows-
 
@@ -101,18 +101,25 @@ jobs:
         run: |
           git clone https://github.com/microsoft/vcpkg D:\vcpkg
           cd D:\vcpkg
-
           .\bootstrap-vcpkg.bat
 
       # --------------------------------------------------------------------
-      # DEPENDENCIES
+      # REMOVE ACCIDENTAL QT VCPKG PORTS
+      # --------------------------------------------------------------------
+      - name: Remove Qt packages from vcpkg
+        continue-on-error: true
+        run: |
+          D:\vcpkg\vcpkg.exe remove qtbase:x64-windows --recurse
+
+      # --------------------------------------------------------------------
+      # INSTALL ONLY NON-QT DEPENDENCIES
       # --------------------------------------------------------------------
       - name: Install Dependencies
         env:
           VCPKG_BINARY_SOURCES: clear;files,D:\vcpkg-cache,readwrite
         run: |
           D:\vcpkg\vcpkg.exe install `
-            poppler[core]:x64-windows `
+            poppler:x64-windows `
             quazip:x64-windows `
             zlib:x64-windows `
             freetype:x64-windows `
@@ -136,19 +143,17 @@ jobs:
           target: "desktop"
           arch: "win64_msvc2022_64"
           dir: "D:\\Qt"
-
           modules: >
             qtwebengine
             qtmultimedia
             qtpositioning
             qtwebchannel
-
           cache: false
 
       # --------------------------------------------------------------------
-      # QT ENVIRONMENT
+      # DETECT QT
       # --------------------------------------------------------------------
-      - name: Set Qt Path
+      - name: Detect Qt Path
         run: |
           $qtPath = Get-ChildItem "D:\Qt" -Directory -Recurse |
             Where-Object { $_.FullName -match "msvc2022_64$" } |
@@ -163,9 +168,9 @@ jobs:
           echo "QT_ROOT=$qtPath" >> $env:GITHUB_ENV
 
       # --------------------------------------------------------------------
-      # VERIFY QT INSTALL
+      # VERIFY QT
       # --------------------------------------------------------------------
-      - name: Verify Qt Modules
+      - name: Verify Qt Installation
         run: |
           Write-Host "QT_ROOT = $env:QT_ROOT"
 
@@ -184,9 +189,19 @@ jobs:
             -G Ninja `
             -DCMAKE_BUILD_TYPE=Release `
             -DCMAKE_CXX_STANDARD=17 `
-            -DCMAKE_PREFIX_PATH="$env:QT_ROOT" `
             -DCMAKE_TOOLCHAIN_FILE="D:/vcpkg/scripts/buildsystems/vcpkg.cmake" `
             -DVCPKG_TARGET_TRIPLET=x64-windows `
+            -DCMAKE_PREFIX_PATH="$env:QT_ROOT" `
+            -DQt6_DIR="$env:QT_ROOT\lib\cmake\Qt6" `
+            -DQt6Core_DIR="$env:QT_ROOT\lib\cmake\Qt6Core" `
+            -DQt6Gui_DIR="$env:QT_ROOT\lib\cmake\Qt6Gui" `
+            -DQt6Widgets_DIR="$env:QT_ROOT\lib\cmake\Qt6Widgets" `
+            -DQt6Network_DIR="$env:QT_ROOT\lib\cmake\Qt6Network" `
+            -DQt6Multimedia_DIR="$env:QT_ROOT\lib\cmake\Qt6Multimedia" `
+            -DQt6WebEngineWidgets_DIR="$env:QT_ROOT\lib\cmake\Qt6WebEngineWidgets" `
+            -DQt6Positioning_DIR="$env:QT_ROOT\lib\cmake\Qt6Positioning" `
+            -DQt6WebChannel_DIR="$env:QT_ROOT\lib\cmake\Qt6WebChannel" `
+            -DCMAKE_DISABLE_FIND_PACKAGE_Qt5=ON `
             -DQT_NO_PACKAGE_VERSION_CHECK=ON `
             -DBUILD_TESTING=OFF
 
@@ -198,7 +213,7 @@ jobs:
           cmake --build D:\build --config Release --parallel
 
       # --------------------------------------------------------------------
-      # DEPLOY QT RUNTIME
+      # DEPLOY QT
       # --------------------------------------------------------------------
       - name: Deploy Qt Runtime
         run: |
@@ -206,7 +221,7 @@ jobs:
             Select-Object -First 1
 
           if (-not $exe) {
-            throw "No executable found in build directory."
+            throw "No executable found."
           }
 
           Write-Host "Deploying $($exe.FullName)"
@@ -219,7 +234,7 @@ jobs:
             $exe.FullName
 
       # --------------------------------------------------------------------
-      # CLEAN LARGE DEBUG FILES
+      # CLEANUP
       # --------------------------------------------------------------------
       - name: Cleanup Before Upload
         run: |
@@ -234,7 +249,6 @@ jobs:
         with:
           name: OpenBoard-Windows-Build
           compression-level: 9
-
           path: |
             D:\build\*.exe
             D:\build\*.dll
