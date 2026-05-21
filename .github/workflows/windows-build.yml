@@ -50,6 +50,17 @@ jobs:
           submodules: recursive
 
       # --------------------------------------------------------------------
+      # PATCH OPENBOARD FOR WINDOWS
+      # --------------------------------------------------------------------
+      - name: Disable Linux-only dependencies
+        run: |
+          (Get-Content CMakeLists.txt) `
+            -replace 'include\(cmake/DependencyPipewire.cmake\)', '# PipeWire disabled on Windows' `
+            | Set-Content CMakeLists.txt
+
+          Write-Host "Linux-only PipeWire dependency removed."
+
+      # --------------------------------------------------------------------
       # PYTHON
       # --------------------------------------------------------------------
       - name: Setup Python
@@ -82,7 +93,7 @@ jobs:
           New-Item -ItemType Directory -Force D:\Qt | Out-Null
 
       # --------------------------------------------------------------------
-      # VCPKG CACHE
+      # RESTORE VCPKG CACHE
       # --------------------------------------------------------------------
       - name: Restore vcpkg Binary Cache
         uses: actions/cache@v4
@@ -104,7 +115,7 @@ jobs:
           .\bootstrap-vcpkg.bat
 
       # --------------------------------------------------------------------
-      # REMOVE QT PORTS FROM VCPKG
+      # REMOVE QT FROM VCPKG
       # --------------------------------------------------------------------
       - name: Remove Qt packages from vcpkg
         continue-on-error: true
@@ -177,6 +188,10 @@ jobs:
         run: |
           Write-Host "QT_ROOT = $env:QT_ROOT"
 
+          if (!(Test-Path "$env:QT_ROOT\lib\cmake\Qt6")) {
+            throw "Qt6 cmake directory missing"
+          }
+
           Get-ChildItem "$env:QT_ROOT\lib\cmake"
 
       # --------------------------------------------------------------------
@@ -188,6 +203,7 @@ jobs:
             -G Ninja `
             -DCMAKE_BUILD_TYPE=Release `
             -DCMAKE_CXX_STANDARD=17 `
+            -DCMAKE_MAKE_PROGRAM="C:/ProgramData/chocolatey/bin/ninja.exe" `
             -DCMAKE_TOOLCHAIN_FILE="D:/vcpkg/scripts/buildsystems/vcpkg.cmake" `
             -DVCPKG_TARGET_TRIPLET=x64-windows `
             -DCMAKE_PREFIX_PATH="$env:QT_ROOT" `
