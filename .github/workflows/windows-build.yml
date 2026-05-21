@@ -202,6 +202,8 @@ jobs:
             -DQt6WebChannel_DIR="$env:QT_ROOT\lib\cmake\Qt6WebChannel" `
             -DQt6Core5Compat_DIR="$env:QT_ROOT\lib\cmake\Qt6Core5Compat" `
             -DCMAKE_DISABLE_FIND_PACKAGE_Qt5=ON `
+            -DCMAKE_DISABLE_FIND_PACKAGE_PipeWire=ON `
+            -DQT_FEATURE_pipewire=OFF `
             -DQT_NO_PACKAGE_VERSION_CHECK=ON `
             -DBUILD_TESTING=OFF
 
