@@ -72,7 +72,7 @@ jobs:
           echo "C:\ProgramData\chocolatey\bin" >> $env:GITHUB_PATH
 
       # --------------------------------------------------------------------
-      # DIRECTORIES
+      # PREPARE DIRECTORIES
       # --------------------------------------------------------------------
       - name: Prepare Directories
         run: |
@@ -82,7 +82,7 @@ jobs:
           New-Item -ItemType Directory -Force D:\Qt | Out-Null
 
       # --------------------------------------------------------------------
-      # CACHE
+      # VCPKG CACHE
       # --------------------------------------------------------------------
       - name: Restore vcpkg Binary Cache
         uses: actions/cache@v4
@@ -93,7 +93,7 @@ jobs:
             vcpkg-x64-windows-
 
       # --------------------------------------------------------------------
-      # VCPKG
+      # BOOTSTRAP VCPKG
       # --------------------------------------------------------------------
       - name: Bootstrap vcpkg
         env:
@@ -112,13 +112,14 @@ jobs:
           D:\vcpkg\vcpkg.exe remove qtbase:x64-windows --recurse
 
       # --------------------------------------------------------------------
-      # INSTALL NON-QT DEPENDENCIES
+      # INSTALL DEPENDENCIES
       # --------------------------------------------------------------------
       - name: Install Dependencies
         env:
           VCPKG_BINARY_SOURCES: clear;files,D:\vcpkg-cache,readwrite
         run: |
           D:\vcpkg\vcpkg.exe install `
+            ffmpeg:x64-windows `
             poppler:x64-windows `
             quazip:x64-windows `
             zlib:x64-windows `
@@ -241,7 +242,7 @@ jobs:
             Remove-Item -Force -ErrorAction SilentlyContinue
 
       # --------------------------------------------------------------------
-      # ARTIFACTS
+      # UPLOAD ARTIFACTS
       # --------------------------------------------------------------------
       - name: Upload Build
         uses: actions/upload-artifact@v4
