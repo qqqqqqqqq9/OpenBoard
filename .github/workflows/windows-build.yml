@@ -195,6 +195,16 @@ jobs:
           Get-ChildItem "$env:QT_ROOT\lib\cmake"
 
       # --------------------------------------------------------------------
+      # PURGE VCPKG QT FILES
+      # --------------------------------------------------------------------
+      - name: Purge vcpkg Qt
+        continue-on-error: true
+        run: |
+          Remove-Item D:\vcpkg\installed\x64-windows\share\Qt6 -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item D:\vcpkg\installed\x64-windows\share\qtbase -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item D:\vcpkg\installed\x64-windows\include\Qt6 -Recurse -Force -ErrorAction SilentlyContinue
+
+      # --------------------------------------------------------------------
       # CONFIGURE
       # --------------------------------------------------------------------
       - name: Configure CMake
@@ -206,22 +216,20 @@ jobs:
             -DCMAKE_MAKE_PROGRAM="C:/ProgramData/chocolatey/bin/ninja.exe" `
             -DCMAKE_TOOLCHAIN_FILE="D:/vcpkg/scripts/buildsystems/vcpkg.cmake" `
             -DVCPKG_TARGET_TRIPLET=x64-windows `
+            -DVCPKG_MANIFEST_MODE=OFF `
+            -DVCPKG_INSTALLED_DIR="D:/vcpkg/installed" `
             -DCMAKE_PREFIX_PATH="$env:QT_ROOT" `
-            -DQt6_DIR="$env:QT_ROOT\lib\cmake\Qt6" `
-            -DQt6Core_DIR="$env:QT_ROOT\lib\cmake\Qt6Core" `
-            -DQt6Gui_DIR="$env:QT_ROOT\lib\cmake\Qt6Gui" `
-            -DQt6Widgets_DIR="$env:QT_ROOT\lib\cmake\Qt6Widgets" `
-            -DQt6Network_DIR="$env:QT_ROOT\lib\cmake\Qt6Network" `
-            -DQt6Multimedia_DIR="$env:QT_ROOT\lib\cmake\Qt6Multimedia" `
-            -DQt6WebEngineWidgets_DIR="$env:QT_ROOT\lib\cmake\Qt6WebEngineWidgets" `
-            -DQt6Positioning_DIR="$env:QT_ROOT\lib\cmake\Qt6Positioning" `
-            -DQt6WebChannel_DIR="$env:QT_ROOT\lib\cmake\Qt6WebChannel" `
-            -DQt6Core5Compat_DIR="$env:QT_ROOT\lib\cmake\Qt6Core5Compat" `
+            -DCMAKE_FIND_PACKAGE_PREFER_CONFIG=ON `
+            -DCMAKE_FIND_USE_PACKAGE_REGISTRY=OFF `
+            -DCMAKE_FIND_USE_SYSTEM_PACKAGE_REGISTRY=OFF `
+            -DCMAKE_FIND_USE_CMAKE_PACKAGE_REGISTRY=OFF `
             -DCMAKE_DISABLE_FIND_PACKAGE_Qt5=ON `
-            -DCMAKE_DISABLE_FIND_PACKAGE_PipeWire=ON `
-            -DQT_FEATURE_pipewire=OFF `
             -DQT_NO_PACKAGE_VERSION_CHECK=ON `
-            -DBUILD_TESTING=OFF
+            -DQT_FEATURE_pipewire=OFF `
+            -DBUILD_TESTING=OFF `
+            -DQt6_ROOT="$env:QT_ROOT" `
+            -DQt6_DIR="$env:QT_ROOT/lib/cmake/Qt6" `
+            -DQt6Core5Compat_DIR="$env:QT_ROOT/lib/cmake/Qt6Core5Compat"
 
       # --------------------------------------------------------------------
       # BUILD
