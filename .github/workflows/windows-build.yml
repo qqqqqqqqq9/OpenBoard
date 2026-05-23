@@ -17,74 +17,79 @@ jobs:
         shell: pwsh
 
     steps:
-      # --------------------------------------------------------------------
-      # FREE DISK SPACE
-      # --------------------------------------------------------------------
+      # ------------------------------------------------------------
+      # FREE SPACE
+      # ------------------------------------------------------------
       - name: Free Disk Space
         run: |
-          Write-Host "Disk space BEFORE cleanup:"
-          Get-PSDrive C,D
-
           Remove-Item "C:\Program Files\Android" -Recurse -Force -ErrorAction SilentlyContinue
           Remove-Item "C:\Program Files\dotnet" -Recurse -Force -ErrorAction SilentlyContinue
           Remove-Item "C:\hostedtoolcache\windows\CodeQL" -Recurse -Force -ErrorAction SilentlyContinue
           Remove-Item "$env:USERPROFILE\.cargo" -Recurse -Force -ErrorAction SilentlyContinue
           Remove-Item "$env:USERPROFILE\.rustup" -Recurse -Force -ErrorAction SilentlyContinue
-          Remove-Item "C:\ghcup" -Recurse -Force -ErrorAction SilentlyContinue
-          Remove-Item "C:\Program Files\LLVM" -Recurse -Force -ErrorAction SilentlyContinue
-          Remove-Item "C:\Program Files\PostgreSQL" -Recurse -Force -ErrorAction SilentlyContinue
-          Remove-Item "C:\Program Files\MongoDB" -Recurse -Force -ErrorAction SilentlyContinue
-          Remove-Item "C:\Program Files\Amazon" -Recurse -Force -ErrorAction SilentlyContinue
-          Remove-Item "C:\Program Files\Microsoft SDKs" -Recurse -Force -ErrorAction SilentlyContinue
 
-          Write-Host "Disk space AFTER cleanup:"
-          Get-PSDrive C,D
-
-      # --------------------------------------------------------------------
+      # ------------------------------------------------------------
       # CHECKOUT
-      # --------------------------------------------------------------------
-      - name: Checkout Repository
+      # ------------------------------------------------------------
+      - name: Checkout
         uses: actions/checkout@v4
         with:
           ref: dev
           submodules: recursive
 
-      # --------------------------------------------------------------------
+      # ------------------------------------------------------------
       # PATCH OPENBOARD FOR WINDOWS
-      # --------------------------------------------------------------------
-      - name: Disable Linux-only dependencies
+      # ------------------------------------------------------------
+      - name: Patch OpenBoard
         run: |
+
+          # Disable PipeWire
           (Get-Content CMakeLists.txt) `
-            -replace 'include\(cmake/DependencyPipewire.cmake\)', '# PipeWire disabled on Windows' `
+            -replace 'include\(cmake/DependencyPipewire.cmake\)', '# disabled on windows' `
             | Set-Content CMakeLists.txt
 
-          Write-Host "Linux-only PipeWire dependency removed."
+          # Disable XPDF splash renderer
+          if (Test-Path "src/pdf/XPDFRenderer.h") {
+            Rename-Item "src/pdf/XPDFRenderer.h" "XPDFRenderer.h.disabled"
+          }
 
-      # --------------------------------------------------------------------
+          if (Test-Path "src/pdf/XPDFRenderer.cpp") {
+            Rename-Item "src/pdf/XPDFRenderer.cpp" "XPDFRenderer.cpp.disabled"
+          }
+
+          # Remove references from source lists
+          Get-ChildItem -Recurse -Include *.cmake,CMakeLists.txt | ForEach-Object {
+            (Get-Content $_.FullName) `
+              -replace 'XPDFRenderer.cpp', '' `
+              -replace 'XPDFRenderer.h', '' `
+              | Set-Content $_.FullName
+          }
+
+      # ------------------------------------------------------------
       # PYTHON
-      # --------------------------------------------------------------------
+      # ------------------------------------------------------------
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.x"
 
-      # --------------------------------------------------------------------
+      # ------------------------------------------------------------
       # MSVC
-      # --------------------------------------------------------------------
+      # ------------------------------------------------------------
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
 
-      # --------------------------------------------------------------------
-      # BUILD TOOLS
-      # --------------------------------------------------------------------
+      # ------------------------------------------------------------
+      # TOOLS
+      # ------------------------------------------------------------
       - name: Install Build Tools
         run: |
-          choco install ninja pkgconfiglite --no-progress -y
+          choco install ninja pkgconfiglite strawberryperl -y --no-progress
           echo "C:\ProgramData\chocolatey\bin" >> $env:GITHUB_PATH
 
-      # --------------------------------------------------------------------
-      # PREPARE DIRECTORIES
-      # --------------------------------------------------------------------
+      # ------------------------------------------------------------
+      # DIRECTORIES
+      # ------------------------------------------------------------
       - name: Prepare Directories
         run: |
           New-Item -ItemType Directory -Force D:\build | Out-Null
@@ -92,20 +97,20 @@ jobs:
           New-Item -ItemType Directory -Force D:\vcpkg-cache | Out-Null
           New-Item -ItemType Directory -Force D:\Qt | Out-Null
 
-      # --------------------------------------------------------------------
-      # RESTORE VCPKG CACHE
-      # --------------------------------------------------------------------
-      - name: Restore vcpkg Binary Cache
+      # ------------------------------------------------------------
+      # CACHE
+      # ------------------------------------------------------------
+      - name: Restore vcpkg cache
         uses: actions/cache@v4
         with:
           path: D:\vcpkg-cache
-          key: vcpkg-x64-windows-${{ hashFiles('**/CMakeLists.txt') }}
+          key: vcpkg-x64-${{ hashFiles('**/CMakeLists.txt') }}
           restore-keys: |
-            vcpkg-x64-windows-
+            vcpkg-x64-
 
-      # --------------------------------------------------------------------
-      # BOOTSTRAP VCPKG
-      # --------------------------------------------------------------------
+      # ------------------------------------------------------------
+      # VCPKG
+      # ------------------------------------------------------------
       - name: Bootstrap vcpkg
         env:
           VCPKG_BINARY_SOURCES: clear;files,D:\vcpkg-cache,readwrite
@@ -114,17 +119,9 @@ jobs:
           cd D:\vcpkg
           .\bootstrap-vcpkg.bat
 
-      # --------------------------------------------------------------------
-      # REMOVE QT FROM VCPKG
-      # --------------------------------------------------------------------
-      - name: Remove Qt packages from vcpkg
-        continue-on-error: true
-        run: |
-          D:\vcpkg\vcpkg.exe remove qtbase:x64-windows --recurse
-
-      # --------------------------------------------------------------------
-      # INSTALL DEPENDENCIES
-      # --------------------------------------------------------------------
+      # ------------------------------------------------------------
+      # DEPENDENCIES
+      # ------------------------------------------------------------
       - name: Install Dependencies
         env:
           VCPKG_BINARY_SOURCES: clear;files,D:\vcpkg-cache,readwrite
@@ -138,17 +135,17 @@ jobs:
             openssl:x64-windows `
             --disable-metrics
 
-      # --------------------------------------------------------------------
-      # PKG-CONFIG
-      # --------------------------------------------------------------------
+      # ------------------------------------------------------------
+      # PKG CONFIG
+      # ------------------------------------------------------------
       - name: Setup pkg-config
         run: |
           echo "PKG_CONFIG_PATH=D:\vcpkg\installed\x64-windows\lib\pkgconfig;D:\vcpkg\installed\x64-windows\share\pkgconfig" >> $env:GITHUB_ENV
 
-      # --------------------------------------------------------------------
-      # INSTALL QT
-      # --------------------------------------------------------------------
-      - name: Install Qt 6.8
+      # ------------------------------------------------------------
+      # QT
+      # ------------------------------------------------------------
+      - name: Install Qt
         uses: jurplel/install-qt-action@v4
         with:
           version: "6.8.3"
@@ -158,138 +155,79 @@ jobs:
           dir: "D:\\Qt"
 
           modules: >
-            qt5compat
             qtwebengine
             qtmultimedia
             qtpositioning
             qtwebchannel
+            qt5compat
 
           cache: false
 
-      # --------------------------------------------------------------------
-      # SET QT PATH
-      # --------------------------------------------------------------------
+      # ------------------------------------------------------------
+      # QT ENV
+      # ------------------------------------------------------------
       - name: Set Qt Path
         run: |
-          $qtPath = "D:\Qt\Qt\6.8.3\msvc2022_64"
+          echo "QT_ROOT=D:\Qt\Qt\6.8.3\msvc2022_64" >> $env:GITHUB_ENV
 
-          if (!(Test-Path $qtPath)) {
-            throw "Qt path not found: $qtPath"
-          }
-
-          echo "QT_ROOT=$qtPath" >> $env:GITHUB_ENV
-
-          Write-Host "QT_ROOT = $qtPath"
-
-      # --------------------------------------------------------------------
-      # VERIFY QT
-      # --------------------------------------------------------------------
-      - name: Verify Qt Installation
-        run: |
-          Write-Host "QT_ROOT = $env:QT_ROOT"
-
-          if (!(Test-Path "$env:QT_ROOT\lib\cmake\Qt6")) {
-            throw "Qt6 cmake directory missing"
-          }
-
-          Get-ChildItem "$env:QT_ROOT\lib\cmake"
-
-      # --------------------------------------------------------------------
-      # REMOVE ALL VCPKG QT
-      # --------------------------------------------------------------------
-      - name: Remove all vcpkg Qt packages
-        continue-on-error: true
-        run: |
-          Remove-Item "D:\vcpkg\installed\x64-windows\share\Qt6" -Recurse -Force -ErrorAction SilentlyContinue
-          Remove-Item "D:\vcpkg\installed\x64-windows\share\qt*" -Recurse -Force -ErrorAction SilentlyContinue
-          Remove-Item "D:\vcpkg\installed\x64-windows\include\Qt*" -Recurse -Force -ErrorAction SilentlyContinue
-          Remove-Item "D:\vcpkg\installed\x64-windows\tools\Qt6" -Recurse -Force -ErrorAction SilentlyContinue
-
-      # --------------------------------------------------------------------
+      # ------------------------------------------------------------
       # CONFIGURE
-      # --------------------------------------------------------------------
-      - name: Configure CMake
+      # ------------------------------------------------------------
+      - name: Configure
         run: |
-          $env:CMAKE_PREFIX_PATH = "$env:QT_ROOT"
-
           cmake -B D:\build -S . `
             -G Ninja `
             -DCMAKE_BUILD_TYPE=Release `
             -DCMAKE_CXX_STANDARD=17 `
-            -DCMAKE_MAKE_PROGRAM="C:/ProgramData/chocolatey/bin/ninja.exe" `
-            -DCMAKE_TOOLCHAIN_FILE="D:/vcpkg/scripts/buildsystems/vcpkg.cmake" `
+            -DCMAKE_TOOLCHAIN_FILE=D:/vcpkg/scripts/buildsystems/vcpkg.cmake `
             -DVCPKG_TARGET_TRIPLET=x64-windows `
-            -DVCPKG_MANIFEST_MODE=OFF `
-            -DVCPKG_FEATURE_FLAGS=manifests- `
-            -DVCPKG_INSTALLED_DIR="D:/vcpkg/installed" `
             -DCMAKE_PREFIX_PATH="$env:QT_ROOT" `
-            -DQt6_ROOT="$env:QT_ROOT" `
-            -DQT_HOST_PATH="$env:QT_ROOT" `
             -DQt6_DIR="$env:QT_ROOT/lib/cmake/Qt6" `
-            -DCMAKE_FIND_PACKAGE_PREFER_CONFIG=ON `
-            -DCMAKE_FIND_USE_PACKAGE_REGISTRY=OFF `
-            -DCMAKE_FIND_USE_SYSTEM_PACKAGE_REGISTRY=OFF `
-            -DCMAKE_FIND_USE_CMAKE_PACKAGE_REGISTRY=OFF `
-            -DCMAKE_DISABLE_FIND_PACKAGE_Qt5=ON `
-            -DQT_NO_PACKAGE_VERSION_CHECK=ON `
-            -DQT_FEATURE_pipewire=OFF `
+            -DCMAKE_DISABLE_FIND_PACKAGE_PipeWire=ON `
             -DBUILD_TESTING=OFF
 
-      # --------------------------------------------------------------------
+      # ------------------------------------------------------------
       # BUILD
-      # --------------------------------------------------------------------
+      # ------------------------------------------------------------
       - name: Build
         run: |
-          cmake --build D:\build --config Release --parallel
+          cmake --build D:\build --config Release --parallel 2
 
-      # --------------------------------------------------------------------
-      # DEPLOY QT RUNTIME
-      # --------------------------------------------------------------------
-      - name: Deploy Qt Runtime
+      # ------------------------------------------------------------
+      # DEPLOY QT
+      # ------------------------------------------------------------
+      - name: Deploy Qt
         run: |
           $exe = Get-ChildItem D:\build -Filter "*.exe" -Recurse |
             Select-Object -First 1
-
-          if (-not $exe) {
-            throw "No executable found."
-          }
-
-          Write-Host "Deploying $($exe.FullName)"
 
           & "$env:QT_ROOT\bin\windeployqt.exe" `
             --release `
             --compiler-runtime `
             --no-translations `
-            --no-opengl-sw `
             $exe.FullName
 
-      # --------------------------------------------------------------------
-      # CLEANUP
-      # --------------------------------------------------------------------
-      - name: Cleanup Before Upload
+      # ------------------------------------------------------------
+      # CLEAN
+      # ------------------------------------------------------------
+      - name: Cleanup
         run: |
-          Get-ChildItem D:\build -Include *.obj,*.pdb,*.ilk -Recurse -ErrorAction SilentlyContinue |
+          Get-ChildItem D:\build -Include *.obj,*.pdb,*.ilk -Recurse |
             Remove-Item -Force -ErrorAction SilentlyContinue
 
-      # --------------------------------------------------------------------
-      # UPLOAD ARTIFACTS
-      # --------------------------------------------------------------------
-      - name: Upload Build
+      # ------------------------------------------------------------
+      # ARTIFACT
+      # ------------------------------------------------------------
+      - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: OpenBoard-Windows-Build
+          name: OpenBoard-Windows
           compression-level: 9
 
           path: |
             D:\build\*.exe
             D:\build\*.dll
             D:\build\platforms\
-            D:\build\styles\
             D:\build\imageformats\
-            D:\build\iconengines\
-            D:\build\tls\
             D:\build\resources\
             D:\build\translations\
-            D:\build\QtWebEngineProcess.exe
-            D:\build\qtwebengine_*.pak
-            D:\build\*.dat
