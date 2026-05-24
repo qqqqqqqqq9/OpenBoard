@@ -5,17 +5,11 @@ on:
 
 permissions:
   contents: read
-  actions: write
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
   POWERSHELL_TELEMETRY_OPTOUT: 1
-
-  # ------------------------------------------------------------
-  # Native GitHub Actions binary cache for vcpkg
-  # ------------------------------------------------------------
-  VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
 
 jobs:
   build:
@@ -56,16 +50,6 @@ jobs:
         with:
           ref: dev
           submodules: recursive
-
-      # ------------------------------------------------------------
-      # ENABLE GITHUB ACTIONS CACHE RUNTIME
-      # REQUIRED FOR vcpkg x-gha CACHE
-      # ------------------------------------------------------------
-      - name: Enable GitHub Actions Cache Runtime
-        uses: actions/cache@v4
-        with:
-          path: D:\gha-cache-init
-          key: gha-runtime-${{ github.run_id }}
 
       # ------------------------------------------------------------
       # PATCH OPENBOARD FOR WINDOWS
@@ -144,6 +128,25 @@ jobs:
           New-Item -ItemType Directory -Force D:\Qt | Out-Null
 
       # ------------------------------------------------------------
+      # RESTORE VCPKG CACHE
+      # ------------------------------------------------------------
+      - name: Restore vcpkg Cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            D:\vcpkg\downloads
+            D:\vcpkg\packages
+            D:\vcpkg\installed
+
+          key: >
+            vcpkg-${{ runner.os }}-x64-windows-
+            2025.04.09-
+            ${{ hashFiles('**/CMakeLists.txt') }}
+
+          restore-keys: |
+            vcpkg-${{ runner.os }}-x64-windows-2025.04.09-
+
+      # ------------------------------------------------------------
       # BOOTSTRAP VCPKG
       # ------------------------------------------------------------
       - name: Bootstrap vcpkg
@@ -153,11 +156,7 @@ jobs:
 
           cd D:\vcpkg
 
-          # --------------------------------------------------------
-          # IMPORTANT:
-          # Pin vcpkg for stable ABI hashes and cache reuse
-          # --------------------------------------------------------
-
+          # Pin vcpkg for stable ABI hashes
           git checkout 2025.04.09
 
           .\bootstrap-vcpkg.bat
@@ -204,10 +203,6 @@ jobs:
             qtpositioning
             qtwebchannel
 
-          # --------------------------------------------------------
-          # IMPORTANT:
-          # Enables persistent Qt cache
-          # --------------------------------------------------------
           cache: true
 
       # ------------------------------------------------------------
