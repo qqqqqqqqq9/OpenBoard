@@ -3,10 +3,19 @@ name: Build OpenBoard Dev (Qt 6.8)
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+  actions: write
+
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
   POWERSHELL_TELEMETRY_OPTOUT: 1
+
+  # ------------------------------------------------------------
+  # Native GitHub Actions vcpkg binary cache
+  # ------------------------------------------------------------
+  VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
 
 jobs:
   build:
@@ -27,7 +36,6 @@ jobs:
           Get-PSDrive C,D
 
           Remove-Item "C:\Program Files\Android" -Recurse -Force -ErrorAction SilentlyContinue
-          Remove-Item "C:\Program Files\dotnet" -Recurse -Force -ErrorAction SilentlyContinue
           Remove-Item "C:\hostedtoolcache\windows\CodeQL" -Recurse -Force -ErrorAction SilentlyContinue
           Remove-Item "$env:USERPROFILE\.cargo" -Recurse -Force -ErrorAction SilentlyContinue
           Remove-Item "$env:USERPROFILE\.rustup" -Recurse -Force -ErrorAction SilentlyContinue
@@ -36,7 +44,6 @@ jobs:
           Remove-Item "C:\Program Files\PostgreSQL" -Recurse -Force -ErrorAction SilentlyContinue
           Remove-Item "C:\Program Files\MongoDB" -Recurse -Force -ErrorAction SilentlyContinue
           Remove-Item "C:\Program Files\Amazon" -Recurse -Force -ErrorAction SilentlyContinue
-          Remove-Item "C:\Program Files\Microsoft SDKs" -Recurse -Force -ErrorAction SilentlyContinue
 
           Write-Host "Disk space AFTER cleanup:"
           Get-PSDrive C,D
@@ -108,6 +115,7 @@ jobs:
       # ------------------------------------------------------------
       - name: Install Build Tools
         run: |
+
           choco install ninja pkgconfiglite strawberryperl --no-progress -y
 
           echo "C:\ProgramData\chocolatey\bin" >> $env:GITHUB_PATH
@@ -119,34 +127,28 @@ jobs:
         run: |
 
           Remove-Item D:\build -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item D:\vcpkg -Recurse -Force -ErrorAction SilentlyContinue
 
           New-Item -ItemType Directory -Force D:\build | Out-Null
           New-Item -ItemType Directory -Force D:\vcpkg | Out-Null
-          New-Item -ItemType Directory -Force D:\vcpkg-cache | Out-Null
           New-Item -ItemType Directory -Force D:\Qt | Out-Null
-
-      # ------------------------------------------------------------
-      # RESTORE VCPKG CACHE
-      # ------------------------------------------------------------
-      - name: Restore vcpkg Binary Cache
-        uses: actions/cache@v4
-        with:
-          path: D:\vcpkg-cache
-          key: vcpkg-x64-windows-${{ hashFiles('**/CMakeLists.txt') }}
-          restore-keys: |
-            vcpkg-x64-windows-
 
       # ------------------------------------------------------------
       # BOOTSTRAP VCPKG
       # ------------------------------------------------------------
       - name: Bootstrap vcpkg
-        env:
-          VCPKG_BINARY_SOURCES: clear;files,D:\vcpkg-cache,readwrite
         run: |
 
           git clone https://github.com/microsoft/vcpkg D:\vcpkg
 
           cd D:\vcpkg
+
+          # --------------------------------------------------------
+          # IMPORTANT:
+          # Pin vcpkg commit for stable ABI hashes
+          # --------------------------------------------------------
+
+          git checkout 2025.04.09
 
           .\bootstrap-vcpkg.bat
 
@@ -154,8 +156,6 @@ jobs:
       # INSTALL DEPENDENCIES
       # ------------------------------------------------------------
       - name: Install Dependencies
-        env:
-          VCPKG_BINARY_SOURCES: clear;files,D:\vcpkg-cache,readwrite
         run: |
 
           D:\vcpkg\vcpkg.exe install `
@@ -194,7 +194,10 @@ jobs:
             qtpositioning
             qtwebchannel
 
-          cache: false
+          # --------------------------------------------------------
+          # ENABLE QT CACHE
+          # --------------------------------------------------------
+          cache: true
 
       # ------------------------------------------------------------
       # SET QT PATH
