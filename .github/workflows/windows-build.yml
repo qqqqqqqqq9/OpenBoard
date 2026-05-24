@@ -1,4 +1,4 @@
-name: Build OpenBoard Dev (Qt 6.8)
+name: Build OpenBoard Dev (Qt 6.8 Prebuilt)
 
 on:
   workflow_dispatch:
@@ -7,7 +7,6 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
   POWERSHELL_TELEMETRY_OPTOUT: 1
-  VCPKG_DEFAULT_TRIPLET: x64-windows
 
 jobs:
   build:
@@ -18,11 +17,15 @@ jobs:
         shell: pwsh
 
     steps:
+
       # ------------------------------------------------------------
       # FREE DISK SPACE
       # ------------------------------------------------------------
       - name: Free Disk Space
         run: |
+          Write-Host "Disk space BEFORE cleanup:"
+          Get-PSDrive C,D
+
           Remove-Item "C:\Program Files\Android" -Recurse -Force -ErrorAction SilentlyContinue
           Remove-Item "C:\hostedtoolcache\windows\CodeQL" -Recurse -Force -ErrorAction SilentlyContinue
           Remove-Item "$env:USERPROFILE\.cargo" -Recurse -Force -ErrorAction SilentlyContinue
@@ -30,6 +33,9 @@ jobs:
           Remove-Item "C:\ghcup" -Recurse -Force -ErrorAction SilentlyContinue
           Remove-Item "C:\Program Files\PostgreSQL" -Recurse -Force -ErrorAction SilentlyContinue
           Remove-Item "C:\Program Files\MongoDB" -Recurse -Force -ErrorAction SilentlyContinue
+
+          Write-Host "Disk space AFTER cleanup:"
+          Get-PSDrive C,D
 
       # ------------------------------------------------------------
       # CHECKOUT
@@ -43,7 +49,7 @@ jobs:
       # ------------------------------------------------------------
       # PATCH OPENBOARD
       # ------------------------------------------------------------
-      - name: Patch OpenBoard for Windows + Qt6
+      - name: Patch OpenBoard for Windows
         run: |
 
           # --------------------------------------------------------
@@ -54,34 +60,35 @@ jobs:
             | Set-Content CMakeLists.txt
 
           # --------------------------------------------------------
-          # Disable XPDF renderer completely
+          # Disable XPDF renderer
           # --------------------------------------------------------
-          Get-ChildItem -Recurse -Include *.cpp,*.h,*.cmake,CMakeLists.txt | ForEach-Object {
+          Get-ChildItem -Recurse -Include *.cpp,*.h,CMakeLists.txt | ForEach-Object {
 
-            (Get-Content $_.FullName) `
+            $content = Get-Content $_.FullName
+
+            $content = $content `
               -replace 'XPDFRenderer\.h', 'PDFRenderer.h' `
               -replace 'XPDFRenderer\.cpp', '' `
-              -replace 'SplashBitmap\.h', '' `
               -replace 'splash/SplashBitmap\.h', '' `
-              -replace 'XPDFRenderer', 'PDFRenderer' `
-              | Set-Content $_.FullName
+              -replace 'SplashBitmap\.h', '' `
+              -replace 'XPDFRenderer', 'PDFRenderer'
 
+            $content | Set-Content $_.FullName
           }
 
           # --------------------------------------------------------
-          # Remove xpdf includes from CMake
+          # Remove explicit xpdf references
           # --------------------------------------------------------
           Get-ChildItem -Recurse -Include CMakeLists.txt | ForEach-Object {
 
             (Get-Content $_.FullName) `
               | Where-Object {
-                  $_ -notmatch 'XPDFRenderer' -and
                   $_ -notmatch 'xpdf'
                 } `
               | Set-Content $_.FullName
           }
 
-          Write-Host "Patched OpenBoard successfully."
+          Write-Host "Patched successfully."
 
       # ------------------------------------------------------------
       # PYTHON
@@ -98,14 +105,14 @@ jobs:
         uses: ilammy/msvc-dev-cmd@v1
 
       # ------------------------------------------------------------
-      # NINJA + PKGCONFIG
+      # BUILD TOOLS
       # ------------------------------------------------------------
       - name: Install Build Tools
         run: |
           choco install ninja pkgconfiglite -y --no-progress
 
       # ------------------------------------------------------------
-      # DIRECTORIES
+      # PREPARE DIRECTORIES
       # ------------------------------------------------------------
       - name: Prepare Directories
         run: |
@@ -121,12 +128,12 @@ jobs:
         uses: actions/cache@v4
         with:
           path: D:\vcpkg-cache
-          key: vcpkg-openboard-x64-v5
+          key: openboard-vcpkg-x64-v2
           restore-keys: |
-            vcpkg-openboard-x64-
+            openboard-vcpkg-x64-
 
       # ------------------------------------------------------------
-      # VCPKG
+      # BOOTSTRAP VCPKG
       # ------------------------------------------------------------
       - name: Bootstrap vcpkg
         env:
@@ -137,44 +144,76 @@ jobs:
           .\bootstrap-vcpkg.bat
 
       # ------------------------------------------------------------
-      # INSTALL QT FROM VCPKG
+      # INSTALL NON-QT DEPENDENCIES ONLY
       # ------------------------------------------------------------
-      - name: Install Qt + Dependencies
+      - name: Install Dependencies
         env:
           VCPKG_BINARY_SOURCES: clear;files,D:\vcpkg-cache,readwrite
         run: |
 
           D:\vcpkg\vcpkg.exe install `
-            qtbase:x64-windows `
-            qttools:x64-windows `
-            qtdeclarative:x64-windows `
-            qtimageformats:x64-windows `
-            qtsvg:x64-windows `
-            qt5compat:x64-windows `
-            qtwebchannel:x64-windows `
-            qtwebengine:x64-windows `
-            qtpositioning:x64-windows `
-            qtmultimedia:x64-windows `
             ffmpeg:x64-windows `
             poppler:x64-windows `
             quazip:x64-windows `
             zlib:x64-windows `
             freetype:x64-windows `
             openssl:x64-windows `
-            --clean-after-build `
-            --disable-metrics
+            --disable-metrics `
+            --clean-after-build
 
       # ------------------------------------------------------------
-      # ENVIRONMENT
+      # INSTALL PREBUILT QT
       # ------------------------------------------------------------
-      - name: Setup Environment
+      - name: Install Qt 6.8.3
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.8.3"
+          host: "windows"
+          target: "desktop"
+          arch: "win64_msvc2022_64"
+          dir: "D:\\Qt"
+
+          modules: >
+            qtwebengine
+            qtmultimedia
+            qtpositioning
+            qtwebchannel
+            qt5compat
+            qtsvg
+
+          cache: true
+
+      # ------------------------------------------------------------
+      # SET QT ENVIRONMENT
+      # ------------------------------------------------------------
+      - name: Set Qt Environment
         run: |
 
-          echo "CMAKE_PREFIX_PATH=D:\vcpkg\installed\x64-windows" >> $env:GITHUB_ENV
+          $qtPath = "D:\Qt\Qt\6.8.3\msvc2022_64"
 
-          echo "Qt6_DIR=D:\vcpkg\installed\x64-windows\share\Qt6" >> $env:GITHUB_ENV
+          if (!(Test-Path $qtPath)) {
+            throw "Qt path not found: $qtPath"
+          }
+
+          echo "QT_ROOT=$qtPath" >> $env:GITHUB_ENV
+
+          echo "CMAKE_PREFIX_PATH=$qtPath;D:\vcpkg\installed\x64-windows" >> $env:GITHUB_ENV
 
           echo "PKG_CONFIG_PATH=D:\vcpkg\installed\x64-windows\lib\pkgconfig" >> $env:GITHUB_ENV
+
+      # ------------------------------------------------------------
+      # VERIFY QT
+      # ------------------------------------------------------------
+      - name: Verify Qt
+        run: |
+
+          Write-Host "QT_ROOT = $env:QT_ROOT"
+
+          if (!(Test-Path "$env:QT_ROOT\lib\cmake\Qt6")) {
+            throw "Qt6 cmake files missing"
+          }
+
+          Get-ChildItem "$env:QT_ROOT\lib\cmake"
 
       # ------------------------------------------------------------
       # CONFIGURE
@@ -186,12 +225,14 @@ jobs:
             -G Ninja `
             -DCMAKE_BUILD_TYPE=Release `
             -DCMAKE_CXX_STANDARD=17 `
-            -DCMAKE_TOOLCHAIN_FILE=D:/vcpkg/scripts/buildsystems/vcpkg.cmake `
+            -DCMAKE_MAKE_PROGRAM="C:/ProgramData/chocolatey/bin/ninja.exe" `
+            -DCMAKE_TOOLCHAIN_FILE="D:/vcpkg/scripts/buildsystems/vcpkg.cmake" `
             -DVCPKG_TARGET_TRIPLET=x64-windows `
-            -DCMAKE_PREFIX_PATH="D:/vcpkg/installed/x64-windows" `
-            -DQt6_DIR="D:/vcpkg/installed/x64-windows/share/Qt6" `
+            -DCMAKE_PREFIX_PATH="$env:QT_ROOT;D:/vcpkg/installed/x64-windows" `
+            -DQt6_DIR="$env:QT_ROOT/lib/cmake/Qt6" `
             -DCMAKE_DISABLE_FIND_PACKAGE_Qt5=ON `
             -DCMAKE_DISABLE_FIND_PACKAGE_PipeWire=ON `
+            -DQT_FEATURE_pipewire=OFF `
             -DBUILD_TESTING=OFF
 
       # ------------------------------------------------------------
@@ -216,16 +257,17 @@ jobs:
 
           Write-Host "Deploying $($exe.FullName)"
 
-          & "D:\vcpkg\installed\x64-windows\tools\Qt6\bin\windeployqt.exe" `
+          & "$env:QT_ROOT\bin\windeployqt.exe" `
             --release `
             --compiler-runtime `
             --no-translations `
+            --no-opengl-sw `
             $exe.FullName
 
       # ------------------------------------------------------------
       # CLEANUP
       # ------------------------------------------------------------
-      - name: Cleanup
+      - name: Cleanup Before Upload
         run: |
           Get-ChildItem D:\build -Include *.obj,*.pdb,*.ilk -Recurse -ErrorAction SilentlyContinue |
             Remove-Item -Force -ErrorAction SilentlyContinue
