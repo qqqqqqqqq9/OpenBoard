@@ -69,21 +69,21 @@ jobs:
 
           if (Test-Path "src/pdf/XPDFRenderer.h") {
 
-@"
-#pragma once
-
-class XPDFRenderer
-{
-};
-"@ | Set-Content "src/pdf/XPDFRenderer.h"
+            Set-Content "src/pdf/XPDFRenderer.h" @(
+              '#pragma once',
+              '',
+              'class XPDFRenderer',
+              '{',
+              '};'
+            )
 
           }
 
           if (Test-Path "src/pdf/XPDFRenderer.cpp") {
 
-@"
-#include "XPDFRenderer.h"
-"@ | Set-Content "src/pdf/XPDFRenderer.cpp"
+            Set-Content "src/pdf/XPDFRenderer.cpp" @(
+              '#include "XPDFRenderer.h"'
+            )
 
           }
 
