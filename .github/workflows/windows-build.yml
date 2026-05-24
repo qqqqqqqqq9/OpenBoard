@@ -57,7 +57,10 @@ jobs:
       - name: Patch OpenBoard for Windows
         run: |
 
-          # Disable PipeWire dependency
+          # --------------------------------------------------------
+          # Disable PipeWire
+          # --------------------------------------------------------
+
           (Get-Content CMakeLists.txt) `
             -replace 'include\(cmake/DependencyPipewire.cmake\)', '# PipeWire disabled on Windows' `
             | Set-Content CMakeLists.txt
@@ -65,30 +68,23 @@ jobs:
           Write-Host "PipeWire dependency removed."
 
           # --------------------------------------------------------
-          # Stub XPDF Splash renderer
+          # Remove XPDF renderer from build system
           # --------------------------------------------------------
 
-          if (Test-Path "src/pdf/XPDFRenderer.h") {
+          $cmakeFiles = Get-ChildItem -Recurse -Filter CMakeLists.txt
 
-            Set-Content "src/pdf/XPDFRenderer.h" @(
-              '#pragma once',
-              '',
-              'class XPDFRenderer',
-              '{',
-              '};'
-            )
+          foreach ($file in $cmakeFiles) {
 
+            $content = Get-Content $file.FullName -Raw
+
+            $content = $content `
+              -replace '.*XPDFRenderer\.cpp.*\r?\n', '' `
+              -replace '.*XPDFRenderer\.h.*\r?\n', ''
+
+            Set-Content $file.FullName $content
           }
 
-          if (Test-Path "src/pdf/XPDFRenderer.cpp") {
-
-            Set-Content "src/pdf/XPDFRenderer.cpp" @(
-              '#include "XPDFRenderer.h"'
-            )
-
-          }
-
-          Write-Host "XPDF Splash renderer stubbed."
+          Write-Host "XPDF renderer removed from CMake."
 
       # ------------------------------------------------------------
       # PYTHON
@@ -156,7 +152,7 @@ jobs:
 
           cd D:\vcpkg
 
-          # Pin vcpkg for stable ABI hashes
+          # Stable vcpkg revision for reliable cache reuse
           git checkout 2025.04.09
 
           .\bootstrap-vcpkg.bat
