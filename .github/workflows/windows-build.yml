@@ -13,7 +13,7 @@ env:
   POWERSHELL_TELEMETRY_OPTOUT: 1
 
   # ------------------------------------------------------------
-  # Native GitHub Actions vcpkg binary cache
+  # Native GitHub Actions binary cache for vcpkg
   # ------------------------------------------------------------
   VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
 
@@ -56,6 +56,16 @@ jobs:
         with:
           ref: dev
           submodules: recursive
+
+      # ------------------------------------------------------------
+      # ENABLE GITHUB ACTIONS CACHE RUNTIME
+      # REQUIRED FOR vcpkg x-gha CACHE
+      # ------------------------------------------------------------
+      - name: Enable GitHub Actions Cache Runtime
+        uses: actions/cache@v4
+        with:
+          path: D:\gha-cache-init
+          key: gha-runtime-${{ github.run_id }}
 
       # ------------------------------------------------------------
       # PATCH OPENBOARD FOR WINDOWS
@@ -145,7 +155,7 @@ jobs:
 
           # --------------------------------------------------------
           # IMPORTANT:
-          # Pin vcpkg commit for stable ABI hashes
+          # Pin vcpkg for stable ABI hashes and cache reuse
           # --------------------------------------------------------
 
           git checkout 2025.04.09
@@ -195,7 +205,8 @@ jobs:
             qtwebchannel
 
           # --------------------------------------------------------
-          # ENABLE QT CACHE
+          # IMPORTANT:
+          # Enables persistent Qt cache
           # --------------------------------------------------------
           cache: true
 
