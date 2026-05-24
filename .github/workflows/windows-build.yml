@@ -63,25 +63,31 @@ jobs:
 
           Write-Host "PipeWire dependency removed."
 
-          # Disable XPDF Splash renderer
+          # --------------------------------------------------------
+          # Stub XPDF Splash renderer
+          # --------------------------------------------------------
+
           if (Test-Path "src/pdf/XPDFRenderer.h") {
-            Rename-Item "src/pdf/XPDFRenderer.h" "XPDFRenderer.h.disabled"
+
+@"
+#pragma once
+
+class XPDFRenderer
+{
+};
+"@ | Set-Content "src/pdf/XPDFRenderer.h"
+
           }
 
           if (Test-Path "src/pdf/XPDFRenderer.cpp") {
-            Rename-Item "src/pdf/XPDFRenderer.cpp" "XPDFRenderer.cpp.disabled"
+
+@"
+#include "XPDFRenderer.h"
+"@ | Set-Content "src/pdf/XPDFRenderer.cpp"
+
           }
 
-          # Remove references from cmake files
-          Get-ChildItem -Recurse -Include *.cmake,CMakeLists.txt | ForEach-Object {
-
-            (Get-Content $_.FullName) `
-              -replace 'XPDFRenderer.cpp', '' `
-              -replace 'XPDFRenderer.h', '' `
-              | Set-Content $_.FullName
-          }
-
-          Write-Host "XPDF Splash renderer disabled."
+          Write-Host "XPDF Splash renderer stubbed."
 
       # ------------------------------------------------------------
       # PYTHON
@@ -111,6 +117,9 @@ jobs:
       # ------------------------------------------------------------
       - name: Prepare Directories
         run: |
+
+          Remove-Item D:\build -Recurse -Force -ErrorAction SilentlyContinue
+
           New-Item -ItemType Directory -Force D:\build | Out-Null
           New-Item -ItemType Directory -Force D:\vcpkg | Out-Null
           New-Item -ItemType Directory -Force D:\vcpkg-cache | Out-Null
@@ -134,6 +143,7 @@ jobs:
         env:
           VCPKG_BINARY_SOURCES: clear;files,D:\vcpkg-cache,readwrite
         run: |
+
           git clone https://github.com/microsoft/vcpkg D:\vcpkg
 
           cd D:\vcpkg
@@ -147,6 +157,7 @@ jobs:
         env:
           VCPKG_BINARY_SOURCES: clear;files,D:\vcpkg-cache,readwrite
         run: |
+
           D:\vcpkg\vcpkg.exe install `
             ffmpeg:x64-windows `
             poppler:x64-windows `
@@ -161,6 +172,7 @@ jobs:
       # ------------------------------------------------------------
       - name: Setup pkg-config
         run: |
+
           echo "PKG_CONFIG_PATH=D:\vcpkg\installed\x64-windows\lib\pkgconfig;D:\vcpkg\installed\x64-windows\share\pkgconfig" >> $env:GITHUB_ENV
 
       # ------------------------------------------------------------
@@ -241,6 +253,7 @@ jobs:
       # ------------------------------------------------------------
       - name: Build
         run: |
+
           cmake --build D:\build --config Release --parallel 2
 
       # ------------------------------------------------------------
@@ -270,7 +283,11 @@ jobs:
       # ------------------------------------------------------------
       - name: Cleanup Before Upload
         run: |
-          Get-ChildItem D:\build -Include *.obj,*.pdb,*.ilk -Recurse -ErrorAction SilentlyContinue |
+
+          Get-ChildItem D:\build `
+            -Include *.obj,*.pdb,*.ilk `
+            -Recurse `
+            -ErrorAction SilentlyContinue |
             Remove-Item -Force -ErrorAction SilentlyContinue
 
       # ------------------------------------------------------------
