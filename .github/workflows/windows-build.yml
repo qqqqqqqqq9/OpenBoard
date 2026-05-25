@@ -179,7 +179,6 @@ jobs:
             qtpositioning
             qtwebchannel
             qt5compat
-            qtsvg
 
           cache: true
 
