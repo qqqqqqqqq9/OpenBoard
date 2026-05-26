@@ -23,6 +23,7 @@ jobs:
       # ------------------------------------------------------------
       - name: Free Disk Space
         run: |
+
           Write-Host "Disk space BEFORE cleanup:"
           Get-PSDrive C,D
 
@@ -120,6 +121,7 @@ jobs:
           New-Item -ItemType Directory -Force D:\vcpkg | Out-Null
           New-Item -ItemType Directory -Force D:\vcpkg-cache | Out-Null
           New-Item -ItemType Directory -Force D:\Qt | Out-Null
+          New-Item -ItemType Directory -Force D:\quazip-install | Out-Null
 
       # ------------------------------------------------------------
       # CACHE
@@ -128,7 +130,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: D:\vcpkg-cache
-          key: openboard-vcpkg-x64-v2
+          key: openboard-vcpkg-x64-v3
           restore-keys: |
             openboard-vcpkg-x64-
 
@@ -139,12 +141,15 @@ jobs:
         env:
           VCPKG_BINARY_SOURCES: clear;files,D:\vcpkg-cache,readwrite
         run: |
+
           git clone https://github.com/microsoft/vcpkg D:\vcpkg
+
           cd D:\vcpkg
+
           .\bootstrap-vcpkg.bat
 
       # ------------------------------------------------------------
-      # INSTALL NON-QT DEPENDENCIES ONLY
+      # INSTALL NON-QT DEPENDENCIES
       # ------------------------------------------------------------
       - name: Install Dependencies
         env:
@@ -154,7 +159,6 @@ jobs:
           D:\vcpkg\vcpkg.exe install `
             ffmpeg:x64-windows `
             poppler:x64-windows `
-            quazip:x64-windows `
             zlib:x64-windows `
             freetype:x64-windows `
             openssl:x64-windows `
@@ -196,9 +200,29 @@ jobs:
 
           echo "QT_ROOT=$qtPath" >> $env:GITHUB_ENV
 
-          echo "CMAKE_PREFIX_PATH=$qtPath;D:\vcpkg\installed\x64-windows" >> $env:GITHUB_ENV
+          echo "CMAKE_PREFIX_PATH=$qtPath;D:\quazip-install;D:\vcpkg\installed\x64-windows" >> $env:GITHUB_ENV
 
           echo "PKG_CONFIG_PATH=D:\vcpkg\installed\x64-windows\lib\pkgconfig" >> $env:GITHUB_ENV
+
+      # ------------------------------------------------------------
+      # BUILD QUAZIP AGAINST INSTALLED QT
+      # ------------------------------------------------------------
+      - name: Build QuaZip for Qt 6
+        run: |
+
+          git clone https://github.com/stachenov/quazip.git D:\quazip
+
+          cmake -B D:\quazip-build -S D:\quazip `
+            -G Ninja `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_PREFIX_PATH="$env:QT_ROOT" `
+            -DCMAKE_INSTALL_PREFIX="D:\quazip-install" `
+            -DQUAZIP_QT_MAJOR_VERSION=6 `
+            -DBUILD_SHARED_LIBS=ON
+
+          cmake --build D:\quazip-build --parallel 2
+
+          cmake --install D:\quazip-build
 
       # ------------------------------------------------------------
       # VERIFY QT
@@ -223,11 +247,11 @@ jobs:
           cmake -B D:\build -S . `
             -G Ninja `
             -DCMAKE_BUILD_TYPE=Release `
-            -DCMAKE_CXX_STANDARD=17 `
+            -DCMAKE_CXX_STANDARD=20 `
             -DCMAKE_MAKE_PROGRAM="C:/ProgramData/chocolatey/bin/ninja.exe" `
             -DCMAKE_TOOLCHAIN_FILE="D:/vcpkg/scripts/buildsystems/vcpkg.cmake" `
             -DVCPKG_TARGET_TRIPLET=x64-windows `
-            -DCMAKE_PREFIX_PATH="$env:QT_ROOT;D:/vcpkg/installed/x64-windows" `
+            -DCMAKE_PREFIX_PATH="$env:QT_ROOT;D:\quazip-install;D:/vcpkg/installed/x64-windows" `
             -DQt6_DIR="$env:QT_ROOT/lib/cmake/Qt6" `
             -DCMAKE_DISABLE_FIND_PACKAGE_Qt5=ON `
             -DCMAKE_DISABLE_FIND_PACKAGE_PipeWire=ON `
@@ -268,7 +292,11 @@ jobs:
       # ------------------------------------------------------------
       - name: Cleanup Before Upload
         run: |
-          Get-ChildItem D:\build -Include *.obj,*.pdb,*.ilk -Recurse -ErrorAction SilentlyContinue |
+
+          Get-ChildItem D:\build `
+            -Include *.obj,*.pdb,*.ilk `
+            -Recurse `
+            -ErrorAction SilentlyContinue |
             Remove-Item -Force -ErrorAction SilentlyContinue
 
       # ------------------------------------------------------------
