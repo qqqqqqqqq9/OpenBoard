@@ -53,16 +53,12 @@ jobs:
       - name: Patch OpenBoard for Windows
         run: |
 
-          # --------------------------------------------------------
           # Disable PipeWire
-          # --------------------------------------------------------
           (Get-Content CMakeLists.txt) `
             -replace 'include\(cmake/DependencyPipewire.cmake\)', '# PipeWire disabled on Windows' `
             | Set-Content CMakeLists.txt
 
-          # --------------------------------------------------------
-          # Disable XPDF renderer
-          # --------------------------------------------------------
+          # Replace XPDF renderer references
           Get-ChildItem -Recurse -Include *.cpp,*.h,CMakeLists.txt | ForEach-Object {
 
             $content = Get-Content $_.FullName
@@ -77,9 +73,7 @@ jobs:
             $content | Set-Content $_.FullName
           }
 
-          # --------------------------------------------------------
-          # Remove explicit xpdf references
-          # --------------------------------------------------------
+          # Remove xpdf references from cmake
           Get-ChildItem -Recurse -Include CMakeLists.txt | ForEach-Object {
 
             (Get-Content $_.FullName) `
@@ -88,8 +82,6 @@ jobs:
                 } `
               | Set-Content $_.FullName
           }
-
-          Write-Host "Patched successfully."
 
       # ------------------------------------------------------------
       # PYTHON
@@ -117,6 +109,7 @@ jobs:
       # ------------------------------------------------------------
       - name: Prepare Directories
         run: |
+
           New-Item -ItemType Directory -Force D:\build | Out-Null
           New-Item -ItemType Directory -Force D:\vcpkg | Out-Null
           New-Item -ItemType Directory -Force D:\vcpkg-cache | Out-Null
@@ -149,7 +142,7 @@ jobs:
           .\bootstrap-vcpkg.bat
 
       # ------------------------------------------------------------
-      # INSTALL NON-QT DEPENDENCIES
+      # INSTALL DEPENDENCIES
       # ------------------------------------------------------------
       - name: Install Dependencies
         env:
@@ -166,7 +159,7 @@ jobs:
             --clean-after-build
 
       # ------------------------------------------------------------
-      # INSTALL PREBUILT QT
+      # INSTALL QT (PREBUILT)
       # ------------------------------------------------------------
       - name: Install Qt 6.8.3
         uses: jurplel/install-qt-action@v4
@@ -187,7 +180,7 @@ jobs:
           cache: true
 
       # ------------------------------------------------------------
-      # SET QT ENVIRONMENT
+      # QT ENVIRONMENT
       # ------------------------------------------------------------
       - name: Set Qt Environment
         run: |
@@ -207,7 +200,7 @@ jobs:
       # ------------------------------------------------------------
       # BUILD QUAZIP AGAINST INSTALLED QT
       # ------------------------------------------------------------
-      - name: Build QuaZip for Qt 6
+      - name: Build QuaZip for Qt6
         run: |
 
           git clone https://github.com/stachenov/quazip.git D:\quazip
