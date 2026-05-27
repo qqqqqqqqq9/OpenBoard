@@ -58,30 +58,7 @@ jobs:
             -replace 'include\(cmake/DependencyPipewire.cmake\)', '# PipeWire disabled on Windows' `
             | Set-Content CMakeLists.txt
 
-          # Replace XPDF renderer references
-          Get-ChildItem -Recurse -Include *.cpp,*.h,CMakeLists.txt | ForEach-Object {
-
-            $content = Get-Content $_.FullName
-
-            $content = $content `
-              -replace 'XPDFRenderer\.h', 'PDFRenderer.h' `
-              -replace 'XPDFRenderer\.cpp', '' `
-              -replace 'splash/SplashBitmap\.h', '' `
-              -replace 'SplashBitmap\.h', '' `
-              -replace 'XPDFRenderer', 'PDFRenderer'
-
-            $content | Set-Content $_.FullName
-          }
-
-          # Remove xpdf references from cmake
-          Get-ChildItem -Recurse -Include CMakeLists.txt | ForEach-Object {
-
-            (Get-Content $_.FullName) `
-              | Where-Object {
-                  $_ -notmatch 'xpdf'
-                } `
-              | Set-Content $_.FullName
-          }
+          Write-Host "OpenBoard patched successfully."
 
       # ------------------------------------------------------------
       # PYTHON
@@ -123,7 +100,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: D:\vcpkg-cache
-          key: openboard-vcpkg-x64-v3
+          key: openboard-vcpkg-x64-v4
           restore-keys: |
             openboard-vcpkg-x64-
 
@@ -180,7 +157,7 @@ jobs:
           cache: true
 
       # ------------------------------------------------------------
-      # QT ENVIRONMENT
+      # SET QT ENVIRONMENT
       # ------------------------------------------------------------
       - name: Set Qt Environment
         run: |
