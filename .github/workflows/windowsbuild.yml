@@ -53,36 +53,42 @@ jobs:
           path: OpenBoard-ThirdParty
 
       # ------------------------------------------------------------
+      # INSTALL PYTHON + AQT
+      # ------------------------------------------------------------
+      - name: Install aqtinstall
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install aqtinstall
+
+      # ------------------------------------------------------------
+      # INSTALL QT 6.8.3
+      # ------------------------------------------------------------
+      - name: Install Qt 6.8.3
+        shell: pwsh
+        run: |
+          python -m aqt install-qt windows desktop 6.8.3 win64_msvc2022_64 `
+            --outputdir D:\a\OpenBoard\Qt `
+            --modules qtwebengine qt5compat qtmultimedia qtpdf
+
+      # ------------------------------------------------------------
       # MSVC ENV
       # ------------------------------------------------------------
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
 
       # ------------------------------------------------------------
-      # INSTALL QT 6.8.3
-      # ------------------------------------------------------------
-      - name: Install Qt 6.8.3
-        uses: jurplel/install-qt-action@v4
-        with:
-          version: 6.8.3
-          host: windows
-          target: desktop
-          arch: win64_msvc2022_64
-          modules: qtwebengine qt5compat multimedia
-
-      # ------------------------------------------------------------
       # VERIFY TOOLCHAIN
       # ------------------------------------------------------------
-      - name: Verify Qt
+      - name: Verify Environment
         shell: cmd
         run: |
           qmake -v
           nmake /?
 
       # ------------------------------------------------------------
-      # BUILD THIRD PARTY (qmake + nmake)
+      # BUILD THIRD PARTY
       # ------------------------------------------------------------
-
       - name: Build FreeType
         shell: cmd
         run: |
@@ -107,7 +113,6 @@ jobs:
       # ------------------------------------------------------------
       # BUILD OPENBOARD
       # ------------------------------------------------------------
-
       - name: Build OpenBoard
         shell: cmd
         run: |
@@ -117,23 +122,21 @@ jobs:
       # ------------------------------------------------------------
       # FIND EXE
       # ------------------------------------------------------------
-
       - name: Locate OpenBoard.exe
         shell: cmd
         run: |
           dir /s OpenBoard.exe
 
       # ------------------------------------------------------------
-      # DEPLOY QT RUNTIME
+      # DEPLOY QT
       # ------------------------------------------------------------
-
       - name: Run windeployqt
         shell: pwsh
         run: |
           $exe = Get-ChildItem -Recurse -Filter OpenBoard.exe | Select-Object -First 1
           if (-not $exe) { throw "OpenBoard.exe not found" }
 
-          & "$env:Qt6_DIR\bin\windeployqt.exe" `
+          & "$env:QT_ROOT\bin\windeployqt.exe" `
             --release `
             --compiler-runtime `
             --no-translations `
@@ -143,20 +146,17 @@ jobs:
       # ------------------------------------------------------------
       # PACKAGE
       # ------------------------------------------------------------
-
       - name: Create Package
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force package | Out-Null
 
           $exe = Get-ChildItem -Recurse -Filter OpenBoard.exe | Select-Object -First 1
-
           Copy-Item $exe.Directory.FullName\* package -Recurse -Force
 
       # ------------------------------------------------------------
       # UPLOAD ARTIFACT
       # ------------------------------------------------------------
-
       - name: Upload Build
         uses: actions/upload-artifact@v4
         with:
