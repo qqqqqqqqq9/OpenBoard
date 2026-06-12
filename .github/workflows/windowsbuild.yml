@@ -1,4 +1,4 @@
-name: Build OpenBoard master (Qt 6.8 Prebuilt)
+name: Build OpenBoard master (1.7.7)
 
 on:
   workflow_dispatch:
@@ -14,7 +14,7 @@ jobs:
 
     defaults:
       run:
-        shell: pwsh
+        shell: cmd
 
     steps:
 
@@ -22,148 +22,41 @@ jobs:
       # FREE DISK SPACE
       # ------------------------------------------------------------
       - name: Free Disk Space
+        shell: pwsh
         run: |
-
           Write-Host "Disk space BEFORE cleanup:"
           Get-PSDrive C,D
-
-          Remove-Item "C:\Program Files\Android" -Recurse -Force -ErrorAction SilentlyContinue
-          Remove-Item "C:\hostedtoolcache\windows\CodeQL" -Recurse -Force -ErrorAction SilentlyContinue
-          Remove-Item "$env:USERPROFILE\.cargo" -Recurse -Force -ErrorAction SilentlyContinue
-          Remove-Item "$env:USERPROFILE\.rustup" -Recurse -Force -ErrorAction SilentlyContinue
-          Remove-Item "C:\ghcup" -Recurse -Force -ErrorAction SilentlyContinue
-          Remove-Item "C:\Program Files\PostgreSQL" -Recurse -Force -ErrorAction SilentlyContinue
-          Remove-Item "C:\Program Files\MongoDB" -Recurse -Force -ErrorAction SilentlyContinue
-
+          Remove-Item "C:\Program Files\Android"           -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item "C:\hostedtoolcache\windows\CodeQL"  -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item "$env:USERPROFILE\.cargo"             -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item "$env:USERPROFILE\.rustup"            -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item "C:\ghcup"                           -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item "C:\Program Files\PostgreSQL"        -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item "C:\Program Files\MongoDB"           -Recurse -Force -ErrorAction SilentlyContinue
           Write-Host "Disk space AFTER cleanup:"
           Get-PSDrive C,D
 
       # ------------------------------------------------------------
-      # CHECKOUT
+      # CHECKOUT OpenBoard (master)
+      # OpenBoard.pro expects ThirdParty as a sibling: ../OpenBoard-ThirdParty
+      # We clone into D:\openboard\OpenBoard  so ThirdParty goes to D:\openboard\OpenBoard-ThirdParty
       # ------------------------------------------------------------
-      - name: Checkout Repository
+      - name: Checkout OpenBoard master
         uses: actions/checkout@v4
         with:
           ref: master
           submodules: recursive
+          path: openboard/OpenBoard
 
-      # ------------------------------------------------------------
-      # PATCH OPENBOARD
-      # ------------------------------------------------------------
-      - name: Patch OpenBoard for Windows
-        run: |
-
-          # Disable PipeWire
-          (Get-Content CMakeLists.txt) `
-            -replace 'include\(cmake/DependencyPipewire.cmake\)', '# PipeWire disabled on Windows' `
-            | Set-Content CMakeLists.txt
-
-          Write-Host "OpenBoard patched successfully."
-
-      # ------------------------------------------------------------
-      # DISABLE LEGACY XPDF RENDERER
-      # ------------------------------------------------------------
-      - name: Disable XPDFRenderer
-        run: |
-
-          Remove-Item `
-            "src/pdf/XPDFRenderer.cpp" `
-            -Force `
-            -ErrorAction SilentlyContinue
-
-          Remove-Item `
-            "src/pdf/XPDFRenderer.h" `
-            -Force `
-            -ErrorAction SilentlyContinue
-
-          Get-ChildItem -Recurse -Include *.cpp,*.h,CMakeLists.txt | ForEach-Object {
-
-            (Get-Content $_.FullName) `
-              | Where-Object {
-                  $_ -notmatch 'XPDFRenderer'
-                } `
-              | Set-Content $_.FullName
-          }
-
-          Write-Host "XPDFRenderer disabled."
-
-      # ------------------------------------------------------------
-      # PYTHON
-      # ------------------------------------------------------------
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - name: Checkout OpenBoard-ThirdParty
+        uses: actions/checkout@v4
         with:
-          python-version: "3.x"
+          repository: OpenBoard-org/OpenBoard-ThirdParty
+          ref: master
+          path: openboard/OpenBoard-ThirdParty
 
       # ------------------------------------------------------------
-      # MSVC
-      # ------------------------------------------------------------
-      - name: Setup MSVC
-        uses: ilammy/msvc-dev-cmd@v1
-
-      # ------------------------------------------------------------
-      # BUILD TOOLS
-      # ------------------------------------------------------------
-      - name: Install Build Tools
-        run: |
-          choco install ninja pkgconfiglite -y --no-progress
-
-      # ------------------------------------------------------------
-      # PREPARE DIRECTORIES
-      # ------------------------------------------------------------
-      - name: Prepare Directories
-        run: |
-
-          New-Item -ItemType Directory -Force D:\build | Out-Null
-          New-Item -ItemType Directory -Force D:\vcpkg | Out-Null
-          New-Item -ItemType Directory -Force D:\vcpkg-cache | Out-Null
-          New-Item -ItemType Directory -Force D:\Qt | Out-Null
-          New-Item -ItemType Directory -Force D:\quazip-install | Out-Null
-
-      # ------------------------------------------------------------
-      # CACHE
-      # ------------------------------------------------------------
-      - name: Restore vcpkg Cache
-        uses: actions/cache@v4
-        with:
-          path: D:\vcpkg-cache
-          key: openboard-vcpkg-x64-v5
-          restore-keys: |
-            openboard-vcpkg-x64-
-
-      # ------------------------------------------------------------
-      # BOOTSTRAP VCPKG
-      # ------------------------------------------------------------
-      - name: Bootstrap vcpkg
-        env:
-          VCPKG_BINARY_SOURCES: clear;files,D:\vcpkg-cache,readwrite
-        run: |
-
-          git clone https://github.com/microsoft/vcpkg D:\vcpkg
-
-          cd D:\vcpkg
-
-          .\bootstrap-vcpkg.bat
-
-      # ------------------------------------------------------------
-      # INSTALL DEPENDENCIES
-      # ------------------------------------------------------------
-      - name: Install Dependencies
-        env:
-          VCPKG_BINARY_SOURCES: clear;files,D:\vcpkg-cache,readwrite
-        run: |
-
-          D:\vcpkg\vcpkg.exe install `
-            ffmpeg:x64-windows `
-            poppler:x64-windows `
-            zlib:x64-windows `
-            freetype:x64-windows `
-            openssl:x64-windows `
-            --disable-metrics `
-            --clean-after-build
-
-      # ------------------------------------------------------------
-      # INSTALL QT (PREBUILT)
+      # INSTALL QT 6.8
       # ------------------------------------------------------------
       - name: Install Qt 6.8.3
         uses: jurplel/install-qt-action@v4
@@ -173,148 +66,91 @@ jobs:
           target: "desktop"
           arch: "win64_msvc2022_64"
           dir: "D:\\Qt"
-
           modules: >
             qtwebengine
             qtmultimedia
             qtpositioning
             qtwebchannel
             qt5compat
-
           cache: true
 
       # ------------------------------------------------------------
-      # SET QT ENVIRONMENT
+      # SETUP MSVC
       # ------------------------------------------------------------
-      - name: Set Qt Environment
+      - name: Setup MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      # ------------------------------------------------------------
+      # BUILD QUAZIP  (only ThirdParty component that needs compiling)
+      # ------------------------------------------------------------
+      - name: Build QuaZip
+        working-directory: openboard/OpenBoard-ThirdParty/quazip
         run: |
-
-          $qtPath = "D:\Qt\Qt\6.8.3\msvc2022_64"
-
-          if (!(Test-Path $qtPath)) {
-            throw "Qt path not found: $qtPath"
-          }
-
-          echo "QT_ROOT=$qtPath" >> $env:GITHUB_ENV
-
-          echo "CMAKE_PREFIX_PATH=$qtPath;D:\quazip-install;D:\vcpkg\installed\x64-windows" >> $env:GITHUB_ENV
-
-          echo "PKG_CONFIG_PATH=D:\vcpkg\installed\x64-windows\lib\pkgconfig" >> $env:GITHUB_ENV
+          qmake quazip.pro
+          nmake release
 
       # ------------------------------------------------------------
-      # BUILD QUAZIP AGAINST INSTALLED QT
+      # BUILD OpenBoard
       # ------------------------------------------------------------
-      - name: Build QuaZip for Qt6
+      - name: Build OpenBoard
+        working-directory: openboard/OpenBoard
         run: |
-
-          git clone https://github.com/stachenov/quazip.git D:\quazip
-
-          cmake -B D:\quazip-build -S D:\quazip `
-            -G Ninja `
-            -DCMAKE_BUILD_TYPE=Release `
-            -DCMAKE_PREFIX_PATH="$env:QT_ROOT" `
-            -DCMAKE_INSTALL_PREFIX="D:\quazip-install" `
-            -DQUAZIP_QT_MAJOR_VERSION=6 `
-            -DBUILD_SHARED_LIBS=ON
-
-          cmake --build D:\quazip-build --parallel 2
-
-          cmake --install D:\quazip-build
+          qmake OpenBoard.pro CONFIG+=release
+          nmake release
 
       # ------------------------------------------------------------
-      # VERIFY QT
+      # DEPLOY Qt runtime
+      # The qmake build puts the exe under build\win32\release\product\
       # ------------------------------------------------------------
-      - name: Verify Qt
+      - name: Deploy Qt runtime
+        shell: pwsh
         run: |
-
-          Write-Host "QT_ROOT = $env:QT_ROOT"
-
-          if (!(Test-Path "$env:QT_ROOT\lib\cmake\Qt6")) {
-            throw "Qt6 cmake files missing"
-          }
-
-          Get-ChildItem "$env:QT_ROOT\lib\cmake"
+          $product = "openboard\OpenBoard\build\win32\release\product"
+          $exe     = Get-ChildItem $product -Filter "*.exe" | Select-Object -First 1
+          if (-not $exe) { throw "No .exe found in $product" }
+          Write-Host "Deploying: $($exe.FullName)"
+          windeployqt --release --compiler-runtime --no-translations --no-opengl-sw $exe.FullName
 
       # ------------------------------------------------------------
-      # CONFIGURE
+      # COPY ThirdParty DLLs into the product folder
+      # (poppler, openssl, zlib — pre-built binaries from ThirdParty)
       # ------------------------------------------------------------
-      - name: Configure CMake
+      - name: Copy ThirdParty DLLs
+        shell: pwsh
         run: |
+          $product  = "openboard\OpenBoard\build\win32\release\product"
+          $tp       = "openboard\OpenBoard-ThirdParty"
 
-          cmake -B D:\build -S . `
-            -G Ninja `
-            -DCMAKE_BUILD_TYPE=Release `
-            -DCMAKE_CXX_STANDARD=20 `
-            -DCMAKE_MAKE_PROGRAM="C:/ProgramData/chocolatey/bin/ninja.exe" `
-            -DCMAKE_TOOLCHAIN_FILE="D:/vcpkg/scripts/buildsystems/vcpkg.cmake" `
-            -DVCPKG_TARGET_TRIPLET=x64-windows `
-            -DCMAKE_PREFIX_PATH="$env:QT_ROOT;D:\quazip-install;D:/vcpkg/installed/x64-windows" `
-            -DQt6_DIR="$env:QT_ROOT/lib/cmake/Qt6" `
-            -DCMAKE_DISABLE_FIND_PACKAGE_Qt5=ON `
-            -DCMAKE_DISABLE_FIND_PACKAGE_PipeWire=ON `
-            -DQT_FEATURE_pipewire=OFF `
-            -DBUILD_TESTING=OFF
+          # Poppler
+          Copy-Item "$tp\poppler\bin\*.dll"                    $product -Force -ErrorAction SilentlyContinue
+
+          # OpenSSL
+          Copy-Item "$tp\openssl\openssl-3.0.15-win64\bin\*.dll" $product -Force -ErrorAction SilentlyContinue
+
+          # zlib
+          Copy-Item "$tp\zlib\1.2.11\bin\*.dll"               $product -Force -ErrorAction SilentlyContinue
+
+          Write-Host "DLLs in product folder:"
+          Get-ChildItem $product -Filter "*.dll" | Select-Object Name
 
       # ------------------------------------------------------------
-      # BUILD
+      # CLEANUP build artifacts before upload
       # ------------------------------------------------------------
-      - name: Build
+      - name: Cleanup build artifacts
+        shell: pwsh
         run: |
-          cmake --build D:\build --config Release --parallel 2
-
-      # ------------------------------------------------------------
-      # DEPLOY QT
-      # ------------------------------------------------------------
-      - name: Deploy Qt Runtime
-        run: |
-
-          $exe = Get-ChildItem D:\build -Filter "*.exe" -Recurse |
-            Select-Object -First 1
-
-          if (-not $exe) {
-            throw "No executable found."
-          }
-
-          Write-Host "Deploying $($exe.FullName)"
-
-          & "$env:QT_ROOT\bin\windeployqt.exe" `
-            --release `
-            --compiler-runtime `
-            --no-translations `
-            --no-opengl-sw `
-            $exe.FullName
-
-      # ------------------------------------------------------------
-      # CLEANUP
-      # ------------------------------------------------------------
-      - name: Cleanup Before Upload
-        run: |
-
-          Get-ChildItem D:\build `
-            -Include *.obj,*.pdb,*.ilk `
-            -Recurse `
-            -ErrorAction SilentlyContinue |
+          Get-ChildItem "openboard\OpenBoard\build" `
+            -Include *.obj,*.pdb,*.ilk -Recurse -ErrorAction SilentlyContinue |
             Remove-Item -Force -ErrorAction SilentlyContinue
 
       # ------------------------------------------------------------
       # UPLOAD
       # ------------------------------------------------------------
-      - name: Upload Build
+      - name: Upload Build Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: OpenBoard-Windows-Build
+          name: OpenBoard-master-Windows
           compression-level: 9
-
-          path: |
-            D:\build\*.exe
-            D:\build\*.dll
-            D:\build\platforms\
-            D:\build\styles\
-            D:\build\imageformats\
-            D:\build\iconengines\
-            D:\build\tls\
-            D:\build\resources\
-            D:\build\translations\
-            D:\build\QtWebEngineProcess.exe
-            D:\build\qtwebengine_*.pak
-            D:\build\*.dat
+          path: openboard/OpenBoard/build/win32/release/product/
