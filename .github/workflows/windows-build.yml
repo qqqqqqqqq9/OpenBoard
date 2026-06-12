@@ -1,10 +1,10 @@
-# NOTE: No confirmed working Windows build exists for the dev branch.
-# This workflow is identical to the master build — if it fails, the failure
-# will be a compile error in the "Build OpenBoard" step, indicating that
-# the dev branch has Windows-incompatible code changes needing upstream fixes.
+name: Build OpenBoard dev (1.8.0)
 
-
-name: Build OpenBoard dev (1.8.0-dev)
+# NOTE: As of June 2026, there is no confirmed working Windows build for the
+# dev branch. This workflow mirrors the master build exactly, since OpenBoard.pro
+# uses the same ThirdParty layout on both branches. It may fail if the dev branch
+# has introduced source-level changes that break Windows compilation.
+# Failures here are expected to be compile errors, not workflow errors.
 
 on:
   workflow_dispatch:
@@ -20,7 +20,7 @@ jobs:
 
     defaults:
       run:
-        shell: pwsh
+        shell: cmd
 
     steps:
 
@@ -28,62 +28,41 @@ jobs:
       # FREE DISK SPACE
       # ------------------------------------------------------------
       - name: Free Disk Space
+        shell: pwsh
         run: |
           Write-Host "Disk space BEFORE cleanup:"
           Get-PSDrive C,D
-          @(
-            "C:\Program Files\Android",
-            "C:\hostedtoolcache\windows\CodeQL",
-            "$env:USERPROFILE\.cargo",
-            "$env:USERPROFILE\.rustup",
-            "C:\ghcup",
-            "C:\Program Files\PostgreSQL",
-            "C:\Program Files\MongoDB"
-          ) | ForEach-Object { Remove-Item $_ -Recurse -Force -ErrorAction SilentlyContinue }
+          Remove-Item "C:\Program Files\Android"           -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item "C:\hostedtoolcache\windows\CodeQL"  -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item "$env:USERPROFILE\.cargo"             -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item "$env:USERPROFILE\.rustup"            -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item "C:\ghcup"                           -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item "C:\Program Files\PostgreSQL"        -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item "C:\Program Files\MongoDB"           -Recurse -Force -ErrorAction SilentlyContinue
           Write-Host "Disk space AFTER cleanup:"
           Get-PSDrive C,D
 
       # ------------------------------------------------------------
-      # CHECKOUT OpenBoard
-      # OpenBoard.pro hard-codes:  THIRD_PARTY_PATH=../OpenBoard-ThirdParty
-      # So both repos must be siblings under the same parent directory.
+      # CHECKOUT
+      # OpenBoard.pro expects ThirdParty as a sibling: ../OpenBoard-ThirdParty
       # ------------------------------------------------------------
-      - name: Checkout OpenBoard (dev)
+      - name: Checkout OpenBoard dev
         uses: actions/checkout@v4
         with:
-          repository: OpenBoard-org/OpenBoard    # <<< change to your fork if building from fork
+          repository: OpenBoard-org/OpenBoard
           ref: dev
           submodules: recursive
-          path: src/OpenBoard
-
-      # Cache ThirdParty by its latest commit SHA so it is only re-downloaded
-      # when the upstream repo actually changes.
-      - name: Get ThirdParty HEAD SHA
-        id: tp-sha
-        run: |
-          $sha = (git ls-remote https://github.com/OpenBoard-org/OpenBoard-ThirdParty HEAD | cut -c1-40)
-          echo "sha=$sha" >> $env:GITHUB_OUTPUT
-
-      - name: Cache OpenBoard-ThirdParty
-        id: tp-cache
-        uses: actions/cache@v4
-        with:
-          path: src/OpenBoard-ThirdParty
-          key: openboard-thirdparty-${{ steps.tp-sha.outputs.sha }}
+          path: openboard/OpenBoard
 
       - name: Checkout OpenBoard-ThirdParty
-        if: steps.tp-cache.outputs.cache-hit != 'true'
         uses: actions/checkout@v4
         with:
           repository: OpenBoard-org/OpenBoard-ThirdParty
           ref: master
-          path: src/OpenBoard-ThirdParty
+          path: openboard/OpenBoard-ThirdParty
 
       # ------------------------------------------------------------
-      # INSTALL QT 6.8 LTS
-      # Qt 6.8 is the current LTS (supported until October 2029).
-      # Do not upgrade to 6.9/6.10/6.11 — those are non-LTS and
-      # OpenBoard has not been tested against them.
+      # INSTALL QT 6.8
       # ------------------------------------------------------------
       - name: Install Qt 6.8.3
         uses: jurplel/install-qt-action@v4
@@ -104,78 +83,75 @@ jobs:
       # ------------------------------------------------------------
       # SETUP MSVC
       # ------------------------------------------------------------
-      - name: Setup MSVC
+      - name: Setup MSVC environment
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x64
 
       # ------------------------------------------------------------
       # BUILD QUAZIP
-      # Only ThirdParty component that needs compiling — the rest
-      # (poppler, openssl, zlib) are pre-built DLLs in the repo.
-      # quazip.pro already sets /MP so qmake passes it through to nmake.
       # ------------------------------------------------------------
       - name: Build QuaZip
-        working-directory: src/OpenBoard-ThirdParty/quazip
+        working-directory: openboard/OpenBoard-ThirdParty/quazip
         run: |
-          qmake quazip.pro CONFIG+=release
-          nmake /S /NOLOGO release
+          qmake quazip.pro
+          nmake release
 
       # ------------------------------------------------------------
-      # BUILD OpenBoard
-      # /MP is already in OpenBoard.pro for MSVC (QMAKE_CXXFLAGS += /MP)
-      # nmake /J uses all available cores at the process level.
+      # BUILD OpenBoard dev
+      # If this step fails with compile errors, the dev branch likely has
+      # Windows-incompatible code changes that need upstream fixes.
       # ------------------------------------------------------------
       - name: Build OpenBoard
-        working-directory: src/OpenBoard
+        working-directory: openboard/OpenBoard
         run: |
           qmake OpenBoard.pro CONFIG+=release
-          nmake /S /NOLOGO /J $env:NUMBER_OF_PROCESSORS release
+          nmake release
 
       # ------------------------------------------------------------
       # DEPLOY Qt runtime
       # ------------------------------------------------------------
       - name: Deploy Qt runtime
+        shell: pwsh
         run: |
-          $product = "src\OpenBoard\build\win32\release\product"
-          $exe = Get-ChildItem $product -Filter "*.exe" -ErrorAction Stop | Select-Object -First 1
+          $product = "openboard\OpenBoard\build\win32\release\product"
+          $exe     = Get-ChildItem $product -Filter "*.exe" | Select-Object -First 1
           if (-not $exe) { throw "No .exe found in $product" }
           Write-Host "Deploying: $($exe.FullName)"
           windeployqt --release --compiler-runtime --no-translations --no-opengl-sw $exe.FullName
 
       # ------------------------------------------------------------
-      # COPY ThirdParty DLLs into the product folder
+      # COPY ThirdParty DLLs
       # ------------------------------------------------------------
       - name: Copy ThirdParty DLLs
+        shell: pwsh
         run: |
-          $product = "src\OpenBoard\build\win32\release\product"
-          $tp      = "src\OpenBoard-ThirdParty"
+          $product = "openboard\OpenBoard\build\win32\release\product"
+          $tp      = "openboard\OpenBoard-ThirdParty"
 
-          # poppler and its dependencies
-          Copy-Item "$tp\poppler\bin\*.dll"                       $product -Force -ErrorAction SilentlyContinue
-          # openssl
+          Copy-Item "$tp\poppler\bin\*.dll"                      $product -Force -ErrorAction SilentlyContinue
           Copy-Item "$tp\openssl\openssl-3.0.15-win64\bin\*.dll" $product -Force -ErrorAction SilentlyContinue
-          # zlib
           Copy-Item "$tp\zlib\1.2.11\bin\*.dll"                  $product -Force -ErrorAction SilentlyContinue
 
-          Write-Host "DLLs now in product folder:"
-          Get-ChildItem $product -Filter "*.dll" | Select-Object -ExpandProperty Name | Sort-Object
+          Write-Host "DLLs in product folder:"
+          Get-ChildItem $product -Filter "*.dll" | Select-Object Name
 
       # ------------------------------------------------------------
-      # CLEANUP .obj/.pdb/.ilk before upload to save artifact space
+      # CLEANUP
       # ------------------------------------------------------------
-      - name: Cleanup build intermediates
+      - name: Cleanup build artifacts
+        shell: pwsh
         run: |
-          Get-ChildItem "src\OpenBoard\build" -Include *.obj,*.pdb,*.ilk `
-            -Recurse -ErrorAction SilentlyContinue |
+          Get-ChildItem "openboard\OpenBoard\build" `
+            -Include *.obj,*.pdb,*.ilk -Recurse -ErrorAction SilentlyContinue |
             Remove-Item -Force -ErrorAction SilentlyContinue
 
       # ------------------------------------------------------------
       # UPLOAD
       # ------------------------------------------------------------
-      - name: Upload Artifact
+      - name: Upload Build Artifact
         uses: actions/upload-artifact@v4
         with:
           name: OpenBoard-dev-Windows
           compression-level: 9
-          path: src/OpenBoard/build/win32/release/product/
+          path: openboard/OpenBoard/build/win32/release/product/
