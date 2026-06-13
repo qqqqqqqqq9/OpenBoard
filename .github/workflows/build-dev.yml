@@ -1,0 +1,321 @@
+# NOTE: No confirmed working Windows build exists for the dev branch.
+# If it fails, the failure will be a compile error in the Build OpenBoard step,
+# indicating Windows-incompatible code changes needing upstream fixes.
+
+name: Build OpenBoard dev (1.8.0)
+
+on:
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  POWERSHELL_TELEMETRY_OPTOUT: 1
+
+jobs:
+  build:
+    runs-on: windows-2022
+
+    defaults:
+      run:
+        shell: cmd
+
+    steps:
+
+      # ------------------------------------------------------------
+      # FREE DISK SPACE
+      # ------------------------------------------------------------
+      - name: Free Disk Space
+        shell: pwsh
+        run: |
+          Write-Host "Disk space BEFORE cleanup:"
+          Get-PSDrive C,D
+          @(
+            "C:\Program Files\Android",
+            "C:\hostedtoolcache\windows\CodeQL",
+            "$env:USERPROFILE\.cargo",
+            "$env:USERPROFILE\.rustup",
+            "C:\ghcup",
+            "C:\Program Files\PostgreSQL",
+            "C:\Program Files\MongoDB"
+          ) | ForEach-Object { Remove-Item $_ -Recurse -Force -ErrorAction SilentlyContinue }
+          Write-Host "Disk space AFTER cleanup:"
+          Get-PSDrive C,D
+
+      # ------------------------------------------------------------
+      # CHECKOUT
+      # OpenBoard.pro expects ThirdParty as a sibling: ../OpenBoard-ThirdParty
+      # ------------------------------------------------------------
+      - name: Checkout OpenBoard dev
+        uses: actions/checkout@v4
+        with:
+          ref: dev
+          submodules: recursive
+          path: openboard/OpenBoard
+
+      - name: Checkout OpenBoard-ThirdParty
+        uses: actions/checkout@v4
+        with:
+          repository: OpenBoard-org/OpenBoard-ThirdParty
+          ref: dev
+          path: openboard/OpenBoard-ThirdParty
+
+      # ------------------------------------------------------------
+      # INSTALL QT 6.8
+      # ------------------------------------------------------------
+      - name: Install Qt 6.8.3
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.8.3"
+          host: "windows"
+          target: "desktop"
+          arch: "win64_msvc2022_64"
+          dir: "D:\\Qt"
+          modules: >
+            qtwebengine
+            qtmultimedia
+            qtpositioning
+            qtwebchannel
+            qt5compat
+          cache: true
+
+      # ------------------------------------------------------------
+      # SETUP MSVC
+      # ------------------------------------------------------------
+      - name: Setup MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      # ------------------------------------------------------------
+      # PATCH: German translations (foldername.patch)
+      # Applied to the .ts source file BEFORE the build so that
+      # lrelease (called by nmake) compiles the patched strings into
+      # the .qm binary. Patches:
+      #   - Color 1-5 renamed to actual color names (for color-blindness)
+      #   - Audios/Movies/Pictures renamed to custom folder names
+      # ------------------------------------------------------------
+      - name: Patch German translations
+        shell: pwsh
+        run: |
+          $ts = "openboard\OpenBoard\resources\i18n\OpenBoard_de.ts"
+          $content = Get-Content $ts -Raw -Encoding UTF8
+
+          # Color names (helps with red/green color blindness)
+          $content = $content -replace '<source>Color 1</source>\s*\n(\s*)<translation>Farbe 1</translation>',
+                                       "<source>Color 1</source>`n`$1<translation>Schwarz 1</translation>"
+          $content = $content -replace '<source>Color 2</source>\s*\n(\s*)<translation>Farbe 2</translation>',
+                                       "<source>Color 2</source>`n`$1<translation>Rot 2</translation>"
+          $content = $content -replace '<source>Color 3</source>\s*\n(\s*)<translation>Farbe 3</translation>',
+                                       "<source>Color 3</source>`n`$1<translation>Blau 3</translation>"
+          $content = $content -replace '<source>Color 4</source>\s*\n(\s*)<translation>Farbe 4</translation>',
+                                       "<source>Color 4</source>`n`$1<translation>Grün 4</translation>"
+          $content = $content -replace '<source>Color 5</source>\s*\n(\s*)<translation>Farbe 5</translation>',
+                                       "<source>Color 5</source>`n`$1<translation>Gelb 5</translation>"
+
+          # Library folder names (topic-based instead of file-type-based)
+          $content = $content -replace '<source>Audios</source>\s*\n(\s*)<translation>Audiodateien</translation>',
+                                       "<source>Audios</source>`n`$1<translation>3-Custom</translation>"
+          $content = $content -replace '<source>Movies</source>\s*\n(\s*)<translation>Filme</translation>',
+                                       "<source>Movies</source>`n`$1<translation>2-Templates</translation>"
+          $content = $content -replace '<source>Pictures</source>\s*\n(\s*)<translation>Bilder</translation>',
+                                       "<source>Pictures</source>`n`$1<translation>1-Einheiten</translation>"
+
+          Set-Content $ts $content -Encoding UTF8
+          Write-Host "Translation patch applied."
+
+      # ------------------------------------------------------------
+      # PATCH: Papier.wgt — German translation of the paper widget UI
+      # Applied to the source tree BEFORE the build so that the
+      # patched file gets copied into the product folder automatically.
+      # Also fixes typo: Hindergrunds -> Hintergrunds
+      # ------------------------------------------------------------
+      - name: Patch Papier.wgt translations
+        shell: pwsh
+        run: |
+          $f = "openboard\OpenBoard\resources\library\applications\Papier.wgt\papier.html"
+          $content = Get-Content $f -Raw -Encoding UTF8
+
+          # Tab labels
+          $content = $content -replace ">Uni<",            ">einfarbig<"
+          $content = $content -replace ">Seyes<",          ">liegend-rautiert<"
+          $content = $content -replace ">Maternelle<",     ">Klasse 2<"
+          $content = $content -replace ">Guide âne<",      ">liniert<"
+          $content = $content -replace ">Quadrillage<",    ">kariert<"
+          $content = $content -replace ">Millimétré<",     ">Millimeter<"
+          $content = $content -replace ">Pointé<",         ">Punkte<"
+
+          # Option labels (French -> German)
+          $content = $content -replace "Format de page",                     "Seitenformat"
+          $content = $content -replace "Couleur</",                          "Farbe</"
+          $content = $content -replace "Couleurs des lignes/du fond",        "Farbe der Linien/des Hintergrunds"
+          $content = $content -replace "Couleurs des lignes/du fond",        "Farbe der Linien/des Hintergrunds"
+          $content = $content -replace "Couleur du fond",                    "Farbe des Hintergrunds"
+          $content = $content -replace "Couleur des points/du fond",         "Farbe der Punkte/des Hintergrunds"
+          $content = $content -replace "Interligne centrale",                "mittlerer Zeilenabstand"
+          $content = $content -replace "Interligne",                         "Zeilenabstand"
+          $content = $content -replace "Épaisseur des lignes",               "Linienstärke"
+          $content = $content -replace "Épaisseur des points",               "Stärke der Punkte"
+          $content = $content -replace "Quadrillage</",                      "kariert</"
+          $content = $content -replace "Maillage</",                         "Gitter</"
+          $content = $content -replace "Type de Maillage",                   "Art des Gitters"
+          $content = $content -replace "Type de point",                      "Art der Punkte"
+
+          # Help tab instructions
+          $content = $content -replace "Cliquer sur les onglets pour choisir le papier à mettre en fond de page\.",
+                                       "Klicke auf die Registerkarten, um das als Hintergrund zu verwendende Papier auszuwählen."
+          $content = $content -replace "Modifier les paramètres du papier et visualisez le résultat dans la fenêtre d'aperçu\.",
+                                       "Ändere die Einstellungen und sieh das Ergebnis im Vorschaufenster an."
+          $content = $content -replace 'Cliquer sur le bouton <button class="petit_bouton_commande" width="10" height="10" disabled></button> pour générer le fond\.',
+                                       'Klicke auf den Button <button class="petit_bouton_commande" width="10" height="10" disabled></button> um den Hintergrund zu erzeugen.'
+
+          Set-Content $f $content -Encoding UTF8
+          Write-Host "Papier.wgt translation patch applied."
+
+      # ------------------------------------------------------------
+      # BUILD QUAZIP
+      # ------------------------------------------------------------
+      - name: Build QuaZip
+        working-directory: openboard/OpenBoard-ThirdParty/quazip
+        run: |
+          qmake quazip.pro
+          nmake release
+
+      # ------------------------------------------------------------
+      # BUILD OpenBoard
+      # ------------------------------------------------------------
+      - name: Build OpenBoard
+        working-directory: openboard/OpenBoard
+        run: |
+          qmake OpenBoard.pro CONFIG+=release
+          nmake release
+
+      # ------------------------------------------------------------
+      # DEPLOY Qt runtime
+      # ------------------------------------------------------------
+      - name: Deploy Qt runtime
+        shell: pwsh
+        run: |
+          $product = "openboard\OpenBoard\build\win32\release\product"
+          $exe = Get-ChildItem $product -Filter "*.exe" | Select-Object -First 1
+          if (-not $exe) { throw "No .exe found in $product" }
+          Write-Host "Deploying: $($exe.FullName)"
+          windeployqt --release --compiler-runtime --no-translations --no-opengl-sw $exe.FullName
+
+      # ------------------------------------------------------------
+      # COPY ThirdParty DLLs
+      # ------------------------------------------------------------
+      - name: Copy ThirdParty DLLs
+        shell: pwsh
+        run: |
+          $product = "openboard\OpenBoard\build\win32\release\product"
+          $tp      = "openboard\OpenBoard-ThirdParty"
+          Copy-Item "$tp\poppler\bin\*.dll"                       $product -Force -ErrorAction SilentlyContinue
+          Copy-Item "$tp\openssl\openssl-3.0.15-win64\bin\*.dll"  $product -Force -ErrorAction SilentlyContinue
+          Copy-Item "$tp\zlib\1.2.11\bin\*.dll"                   $product -Force -ErrorAction SilentlyContinue
+          Write-Host "DLLs in product folder:"
+          Get-ChildItem $product -Filter "*.dll" | Select-Object -ExpandProperty Name | Sort-Object
+
+      # ------------------------------------------------------------
+      # COPY RESOURCE FOLDERS
+      # ------------------------------------------------------------
+      - name: Copy Resource Folders
+        shell: pwsh
+        run: |
+          $src     = "openboard\OpenBoard\resources"
+          $product = "openboard\OpenBoard\build\win32\release\product"
+
+          foreach ($folder in @("customizations","etc","fonts","i18n","library","startupHints")) {
+            $from = "$src\$folder"
+            $to   = "$product\$folder"
+            if (Test-Path $from) {
+              Copy-Item $from $to -Recurse -Force
+              Write-Host "Copied: $folder"
+            } else {
+              Write-Warning "Not found: $folder"
+            }
+          }
+          if (Test-Path "$src\xpdfrc") {
+            Copy-Item "$src\xpdfrc" $product -Force
+            Write-Host "Copied: xpdfrc"
+          }
+
+      # ------------------------------------------------------------
+      # REORGANISE WIDGET LIBRARY
+      # Mirrors the sorting logic in makedpkg.sh:
+      #   wichtige/         <- curated widgets used daily
+      #   wichtige/sonstige <- remaining built-in widgets
+      #   (top level)       <- custom widgets stay where they are
+      # Also moves media library contents into a templates/ subfolder
+      # so the root folder is free for topic-based organisation.
+      # ------------------------------------------------------------
+      - name: Reorganise Widget Library
+        shell: pwsh
+        run: |
+          $apps = "openboard\OpenBoard\build\win32\release\product\library\applications"
+
+          New-Item -ItemType Directory -Force "$apps\wichtige\sonstige" | Out-Null
+
+          # Daily-use widgets -> wichtige/
+          foreach ($w in @(
+            "Camera.wgt","Horloge.wgt","Notes.wgt","Papier.wgt","Stopwatch.wgt","Latex2svg.wgt"
+          )) {
+            if (Test-Path "$apps\$w") {
+              Move-Item "$apps\$w" "$apps\wichtige\$w" -Force
+              Write-Host "-> wichtige: $w"
+            }
+          }
+
+          # Remaining built-in widgets -> wichtige/sonstige/
+          foreach ($w in @(
+            "AnyEmbed.wgt","Calculator.wgt","ColorPicker.wgt","GeoInfo.wgt",
+            "GoogleMaps.wgt","GraphMe.wgt","Html.wgt","OpenStreetMap.wgt",
+            "QR-Code.wgt","VideoPicker.wgt","Wikipedia.wgt","Wiktionnairy.wgt","iCell.wgt"
+          )) {
+            if (Test-Path "$apps\$w") {
+              Move-Item "$apps\$w" "$apps\wichtige\sonstige\$w" -Force
+              Write-Host "-> wichtige/sonstige: $w"
+            }
+          }
+
+          # Move media library contents into templates/ subfolders
+          $lib = "openboard\OpenBoard\build\win32\release\product\library"
+          foreach ($folder in @("pictures","videos","shape","audios")) {
+            $src  = "$lib\$folder"
+            $tmp  = "$lib\$folder-templates"
+            $dest = "$lib\$folder\templates"
+            if (Test-Path $src) {
+              New-Item -ItemType Directory -Force $tmp | Out-Null
+              Get-ChildItem $src | Move-Item -Destination $tmp -Force
+              New-Item -ItemType Directory -Force $dest | Out-Null
+              Get-ChildItem $tmp | Move-Item -Destination $dest -Force
+              Remove-Item $tmp -Force -ErrorAction SilentlyContinue
+              Write-Host "Reorganised: $folder -> $folder/templates/"
+            }
+          }
+
+          Write-Host "`nFinal applications layout:"
+          Get-ChildItem "$apps" -Recurse -Filter "*.wgt" |
+            Select-Object -ExpandProperty FullName |
+            ForEach-Object { $_.Replace((Resolve-Path $apps).Path + "\", "") } |
+            Sort-Object
+
+      # ------------------------------------------------------------
+      # CLEANUP
+      # ------------------------------------------------------------
+      - name: Cleanup build intermediates
+        shell: pwsh
+        run: |
+          Get-ChildItem "openboard\OpenBoard\build" `
+            -Include *.obj,*.pdb,*.ilk -Recurse -ErrorAction SilentlyContinue |
+            Remove-Item -Force -ErrorAction SilentlyContinue
+
+      # ------------------------------------------------------------
+      # UPLOAD
+      # ------------------------------------------------------------
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenBoard-dev-Windows
+          compression-level: 9
+          path: openboard/OpenBoard/build/win32/release/product/
