@@ -1,8 +1,4 @@
-# NOTE: No confirmed working Windows build exists for the dev branch.
-# If it fails, the failure will be a compile error in the Build OpenBoard step,
-# indicating Windows-incompatible code changes needing upstream fixes.
-
-name: Build OpenBoard dev mit claude (1.8.0)
+name: Build OpenBoard dev
 
 on:
   workflow_dispatch:
@@ -49,6 +45,7 @@ jobs:
       - name: Checkout OpenBoard dev
         uses: actions/checkout@v4
         with:
+          repository: OpenBoard-org/OpenBoard
           ref: dev
           submodules: recursive
           path: openboard/OpenBoard
@@ -126,9 +123,6 @@ jobs:
 
       # ------------------------------------------------------------
       # PATCH: Papier.wgt — German translation of the paper widget UI
-      # Applied to the source tree BEFORE the build so that the
-      # patched file gets copied into the product folder automatically.
-      # Also fixes typo: Hindergrunds -> Hintergrunds
       # ------------------------------------------------------------
       - name: Patch Papier.wgt translations
         shell: pwsh
@@ -148,7 +142,6 @@ jobs:
           # Option labels (French -> German)
           $content = $content -replace "Format de page",                     "Seitenformat"
           $content = $content -replace "Couleur</",                          "Farbe</"
-          $content = $content -replace "Couleurs des lignes/du fond",        "Farbe der Linien/des Hintergrunds"
           $content = $content -replace "Couleurs des lignes/du fond",        "Farbe der Linien/des Hintergrunds"
           $content = $content -replace "Couleur du fond",                    "Farbe des Hintergrunds"
           $content = $content -replace "Couleur des points/du fond",         "Farbe der Punkte/des Hintergrunds"
@@ -192,6 +185,9 @@ jobs:
 
       # ------------------------------------------------------------
       # DEPLOY Qt runtime
+      # FIX 1: Removed --no-translations (app needs Qt locale files)
+      # FIX 2: Removed --no-opengl-sw (keep software OpenGL fallback
+      #         for machines without proper GPU drivers)
       # ------------------------------------------------------------
       - name: Deploy Qt runtime
         shell: pwsh
@@ -200,20 +196,50 @@ jobs:
           $exe = Get-ChildItem $product -Filter "*.exe" | Select-Object -First 1
           if (-not $exe) { throw "No .exe found in $product" }
           Write-Host "Deploying: $($exe.FullName)"
-          windeployqt --release --compiler-runtime --no-translations --no-opengl-sw $exe.FullName
+          windeployqt --release --compiler-runtime $exe.FullName
 
       # ------------------------------------------------------------
       # COPY ThirdParty DLLs
+      # FIX 3: Added QuaZip DLL (was built but never copied — likely
+      #         the main cause of the silent startup crash)
+      # FIX 4: OpenSSL path now discovered dynamically instead of
+      #         hardcoded version string (silently failed on version mismatch)
       # ------------------------------------------------------------
       - name: Copy ThirdParty DLLs
         shell: pwsh
         run: |
           $product = "openboard\OpenBoard\build\win32\release\product"
           $tp      = "openboard\OpenBoard-ThirdParty"
-          Copy-Item "$tp\poppler\bin\*.dll"                       $product -Force -ErrorAction SilentlyContinue
-          Copy-Item "$tp\openssl\openssl-3.0.15-win64\bin\*.dll"  $product -Force -ErrorAction SilentlyContinue
-          Copy-Item "$tp\zlib\1.2.11\bin\*.dll"                   $product -Force -ErrorAction SilentlyContinue
-          Write-Host "DLLs in product folder:"
+
+          # Poppler
+          Copy-Item "$tp\poppler\bin\*.dll" $product -Force -ErrorAction SilentlyContinue
+
+          # OpenSSL — discover path dynamically to survive version updates
+          $opensslBin = Get-ChildItem "$tp\openssl" -Recurse -Filter "libssl*.dll" |
+            Select-Object -First 1 | Split-Path -Parent
+          if ($opensslBin) {
+            Copy-Item "$opensslBin\*.dll" $product -Force
+            Write-Host "OpenSSL DLLs copied from: $opensslBin"
+          } else {
+            Write-Warning "OpenSSL DLLs not found — networking may not work"
+          }
+
+          # zlib
+          Copy-Item "$tp\zlib\1.2.11\bin\*.dll" $product -Force -ErrorAction SilentlyContinue
+
+          # QuaZip — release DLLs only (exclude debug builds)
+          $quazipDlls = Get-ChildItem "$tp\quazip" -Recurse -Filter "*.dll" |
+            Where-Object { $_.FullName -notmatch "\\debug\\" }
+          if ($quazipDlls) {
+            $quazipDlls | ForEach-Object {
+              Copy-Item $_.FullName $product -Force
+              Write-Host "Copied QuaZip DLL: $($_.Name)"
+            }
+          } else {
+            Write-Warning "QuaZip DLL not found — app will likely crash on startup"
+          }
+
+          Write-Host "`nAll DLLs in product folder:"
           Get-ChildItem $product -Filter "*.dll" | Select-Object -ExpandProperty Name | Sort-Object
 
       # ------------------------------------------------------------
@@ -242,12 +268,6 @@ jobs:
 
       # ------------------------------------------------------------
       # REORGANISE WIDGET LIBRARY
-      # Mirrors the sorting logic in makedpkg.sh:
-      #   wichtige/         <- curated widgets used daily
-      #   wichtige/sonstige <- remaining built-in widgets
-      #   (top level)       <- custom widgets stay where they are
-      # Also moves media library contents into a templates/ subfolder
-      # so the root folder is free for topic-based organisation.
       # ------------------------------------------------------------
       - name: Reorganise Widget Library
         shell: pwsh
