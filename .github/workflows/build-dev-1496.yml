@@ -94,7 +94,7 @@ jobs:
           arch: x64
 
       # ------------------------------------------------------------
-      # PATCH: German translations (foldername.patch)
+      # PATCH: German translations
       # ------------------------------------------------------------
       - name: Patch German translations
         shell: pwsh
@@ -102,6 +102,7 @@ jobs:
           $ts = "openboard\OpenBoard\resources\i18n\OpenBoard_de.ts"
           $content = Get-Content $ts -Raw -Encoding UTF8
 
+          # Color names (helps with red/green color blindness)
           $content = $content -replace '<source>Color 1</source>\s*\n(\s*)<translation>Farbe 1</translation>',
                                        "<source>Color 1</source>`n`$1<translation>Schwarz 1</translation>"
           $content = $content -replace '<source>Color 2</source>\s*\n(\s*)<translation>Farbe 2</translation>',
@@ -113,6 +114,7 @@ jobs:
           $content = $content -replace '<source>Color 5</source>\s*\n(\s*)<translation>Farbe 5</translation>',
                                        "<source>Color 5</source>`n`$1<translation>Gelb 5</translation>"
 
+          # Library folder names (topic-based instead of file-type-based)
           $content = $content -replace '<source>Audios</source>\s*\n(\s*)<translation>Audiodateien</translation>',
                                        "<source>Audios</source>`n`$1<translation>3-Custom</translation>"
           $content = $content -replace '<source>Movies</source>\s*\n(\s*)<translation>Filme</translation>',
@@ -132,6 +134,7 @@ jobs:
           $f = "openboard\OpenBoard\resources\library\applications\Papier.wgt\papier.html"
           $content = Get-Content $f -Raw -Encoding UTF8
 
+          # Tab labels
           $content = $content -replace ">Uni<",            ">einfarbig<"
           $content = $content -replace ">Seyes<",          ">liegend-rautiert<"
           $content = $content -replace ">Maternelle<",     ">Klasse 2<"
@@ -140,6 +143,7 @@ jobs:
           $content = $content -replace ">Millimétré<",     ">Millimeter<"
           $content = $content -replace ">Pointé<",         ">Punkte<"
 
+          # Option labels (French -> German)
           $content = $content -replace "Format de page",                     "Seitenformat"
           $content = $content -replace "Couleur</",                          "Farbe</"
           $content = $content -replace "Couleurs des lignes/du fond",        "Farbe der Linien/des Hintergrunds"
@@ -155,6 +159,7 @@ jobs:
           $content = $content -replace "Type de Maillage",                   "Art des Gitters"
           $content = $content -replace "Type de point",                      "Art der Punkte"
 
+          # Help tab instructions
           $content = $content -replace "Cliquer sur les onglets pour choisir le papier à mettre en fond de page\.",
                                        "Klicke auf die Registerkarten, um das als Hintergrund zu verwendende Papier auszuwählen."
           $content = $content -replace "Modifier les paramètres du papier et visualisez le résultat dans la fenêtre d'aperçu\.",
@@ -166,29 +171,34 @@ jobs:
           Write-Host "Papier.wgt translation patch applied."
 
       # ------------------------------------------------------------
+      # COMPILE TRANSLATIONS
+      # FIX: .ts source files were copied but never compiled to .qm
+      # binaries — OpenBoard crashed on startup because it couldn't
+      # load any translations. lrelease must run after patches so the
+      # patched strings are included in the compiled .qm files.
+      # ------------------------------------------------------------
+      - name: Compile translations (.ts -> .qm)
+        shell: pwsh
+        run: |
+          $i18n = "openboard\OpenBoard\resources\i18n"
+          $compiled = 0
+          Get-ChildItem $i18n -Filter "*.ts" | ForEach-Object {
+            lrelease $_.FullName
+            $compiled++
+          }
+          Write-Host "Compiled $compiled translation files."
+          Write-Host "Generated .qm files:"
+          Get-ChildItem $i18n -Filter "*.qm" | Select-Object -ExpandProperty Name
+
+      # ------------------------------------------------------------
       # BUILD QUAZIP
+      # (builds as static .lib — no DLL needed)
       # ------------------------------------------------------------
       - name: Build QuaZip
         working-directory: openboard/OpenBoard-ThirdParty/quazip
         run: |
           qmake quazip.pro
           nmake release
-
-      # ------------------------------------------------------------
-      # DIAGNOSTIC: Find QuaZip build output
-      # Paste the output here so the copy path can be fixed.
-      # Remove this step once the correct path is confirmed.
-      # ------------------------------------------------------------
-      - name: Find QuaZip build output
-        shell: pwsh
-        run: |
-          Write-Host "=== All DLLs under OpenBoard-ThirdParty ==="
-          Get-ChildItem "openboard\OpenBoard-ThirdParty" -Recurse -Filter "*.dll" |
-            Select-Object -ExpandProperty FullName
-
-          Write-Host "=== All files under quazip folder ==="
-          Get-ChildItem "openboard\OpenBoard-ThirdParty\quazip" -Recurse |
-            Select-Object -ExpandProperty FullName
 
       # ------------------------------------------------------------
       # BUILD OpenBoard
@@ -201,9 +211,9 @@ jobs:
 
       # ------------------------------------------------------------
       # DEPLOY Qt runtime
-      # FIX 1: Removed --no-translations (app needs Qt locale files)
-      # FIX 2: Removed --no-opengl-sw (keep software OpenGL fallback
-      #         for machines without proper GPU drivers)
+      # FIX: Removed --no-translations (app needs Qt locale files)
+      # FIX: Removed --no-opengl-sw (keep software OpenGL fallback
+      #      for machines without proper GPU drivers)
       # ------------------------------------------------------------
       - name: Deploy Qt runtime
         shell: pwsh
@@ -215,9 +225,39 @@ jobs:
           windeployqt --release --compiler-runtime $exe.FullName
 
       # ------------------------------------------------------------
+      # COPY QtWebEngine resources
+      # FIX: windeployqt does not copy the WebEngine .pak resource
+      # files. Without them QtWebEngine fails to initialize and the
+      # app crashes silently on startup.
+      # ------------------------------------------------------------
+      - name: Copy QtWebEngine resources
+        shell: pwsh
+        run: |
+          $product = "openboard\OpenBoard\build\win32\release\product"
+          $qtRes   = "$env:QT_ROOT_DIR\resources"
+          if (Test-Path $qtRes) {
+            Get-ChildItem $qtRes | ForEach-Object {
+              Copy-Item $_.FullName $product -Force
+              Write-Host "Copied WebEngine resource: $($_.Name)"
+            }
+          } else {
+            Write-Warning "Qt resources folder not found at: $qtRes — trying fallback paths"
+            $fallback = Get-ChildItem "D:\Qt" -Recurse -Filter "qtwebengine_resources.pak" -ErrorAction SilentlyContinue |
+              Select-Object -First 1 | Split-Path -Parent
+            if ($fallback) {
+              Get-ChildItem $fallback | ForEach-Object {
+                Copy-Item $_.FullName $product -Force
+                Write-Host "Copied (fallback): $($_.Name)"
+              }
+            } else {
+              Write-Error "QtWebEngine resources not found — app will crash on startup"
+            }
+          }
+
+      # ------------------------------------------------------------
       # COPY ThirdParty DLLs
-      # FIX 3: Added QuaZip DLL (path to be confirmed by diagnostic step above)
-      # FIX 4: OpenSSL path discovered dynamically
+      # FIX: OpenSSL path discovered dynamically instead of hardcoded
+      #      version string (silently failed on version mismatch)
       # ------------------------------------------------------------
       - name: Copy ThirdParty DLLs
         shell: pwsh
@@ -229,7 +269,10 @@ jobs:
           Copy-Item "$tp\poppler\bin\*.dll" $product -Force -ErrorAction SilentlyContinue
 
           # OpenSSL — discover path dynamically to survive version updates
+          # Exclude the old win32 32-bit folder
           $opensslBin = Get-ChildItem "$tp\openssl" -Recurse -Filter "libssl*.dll" |
+            Where-Object { $_.FullName -notmatch "\\win32\\" } |
+            Sort-Object { $_.FullName } -Descending |
             Select-Object -First 1 | Split-Path -Parent
           if ($opensslBin) {
             Copy-Item "$opensslBin\*.dll" $product -Force
@@ -241,23 +284,13 @@ jobs:
           # zlib
           Copy-Item "$tp\zlib\1.2.11\bin\*.dll" $product -Force -ErrorAction SilentlyContinue
 
-          # QuaZip — search entire ThirdParty tree, release DLLs only
-          $quazipDlls = Get-ChildItem "$tp\quazip" -Recurse -Filter "*.dll" |
-            Where-Object { $_.FullName -notmatch "\\debug\\" }
-          if ($quazipDlls) {
-            $quazipDlls | ForEach-Object {
-              Copy-Item $_.FullName $product -Force
-              Write-Host "Copied QuaZip DLL: $($_.Name)"
-            }
-          } else {
-            Write-Warning "QuaZip DLL not found — app will likely crash on startup"
-          }
-
           Write-Host "`nAll DLLs in product folder:"
           Get-ChildItem $product -Filter "*.dll" | Select-Object -ExpandProperty Name | Sort-Object
 
       # ------------------------------------------------------------
       # COPY RESOURCE FOLDERS
+      # NOTE: i18n folder contains both .ts (source) and compiled .qm
+      # files after the "Compile translations" step above.
       # ------------------------------------------------------------
       - name: Copy Resource Folders
         shell: pwsh
@@ -280,6 +313,11 @@ jobs:
             Write-Host "Copied: xpdfrc"
           }
 
+          # Verify .qm files made it in
+          $qmCount = (Get-ChildItem "$product\i18n" -Filter "*.qm" -ErrorAction SilentlyContinue).Count
+          Write-Host ".qm files in product/i18n: $qmCount"
+          if ($qmCount -eq 0) { Write-Warning "No .qm files found — translations will not work" }
+
       # ------------------------------------------------------------
       # REORGANISE WIDGET LIBRARY
       # ------------------------------------------------------------
@@ -290,6 +328,7 @@ jobs:
 
           New-Item -ItemType Directory -Force "$apps\wichtige\sonstige" | Out-Null
 
+          # Daily-use widgets -> wichtige/
           foreach ($w in @(
             "Camera.wgt","Horloge.wgt","Notes.wgt","Papier.wgt","Stopwatch.wgt","Latex2svg.wgt"
           )) {
@@ -299,6 +338,7 @@ jobs:
             }
           }
 
+          # Remaining built-in widgets -> wichtige/sonstige/
           foreach ($w in @(
             "AnyEmbed.wgt","Calculator.wgt","ColorPicker.wgt","GeoInfo.wgt",
             "GoogleMaps.wgt","GraphMe.wgt","Html.wgt","OpenStreetMap.wgt",
@@ -310,6 +350,7 @@ jobs:
             }
           }
 
+          # Move media library contents into templates/ subfolders
           $lib = "openboard\OpenBoard\build\win32\release\product\library"
           foreach ($folder in @("pictures","videos","shape","audios")) {
             $src  = "$lib\$folder"
