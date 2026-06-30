@@ -1,4 +1,4 @@
-name: Build OpenBoard dev (1.8.0)
+name: Build OpenBoard dev (1.8.0. old and deprecated)
 
 # NOTE: As of June 2026, there is no confirmed working Windows build for the
 # dev branch. This workflow mirrors the master build exactly, since OpenBoard.pro
