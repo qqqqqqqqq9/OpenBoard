@@ -1,4 +1,4 @@
-name: Build OpenBoard dev
+name: OpenBoard dev (current)
 
 on:
   workflow_dispatch:
