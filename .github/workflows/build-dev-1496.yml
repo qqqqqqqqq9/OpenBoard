@@ -7,7 +7,7 @@
 # If it fails, the failure will be a compile error in the Build OpenBoard step,
 # indicating Windows-incompatible code changes needing upstream fixes.
 
-name: Build OpenBoard dev + PR#1496 (sidebar fix)
+name: OpenBoard dev-branch + PR#1496 (sidebar fix) current yml
 
 on:
   workflow_dispatch:
