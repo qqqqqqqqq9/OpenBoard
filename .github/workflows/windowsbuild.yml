@@ -1,4 +1,4 @@
-name: Build OpenBoard master (1.7.7)
+name: Build OpenBoard master (1.7.7 old and deprecated)
 
 on:
   workflow_dispatch:
