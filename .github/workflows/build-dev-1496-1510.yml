@@ -63,6 +63,7 @@ jobs:
           repository: claas998/OpenBoard
           ref: feat-stylus-bar-should-not-obscure-the-sidebars
           submodules: recursive
+          fetch-depth: 0
           path: openboard/OpenBoard
 
       - name: Checkout OpenBoard-ThirdParty
